@@ -123,7 +123,7 @@ export default function ProductEditor({ product, onClose, onSaved }) {
               <Label className={lbl}>Imágenes</Label>
               <div className="flex flex-wrap gap-3 mt-2">
                 {f.images.map((img, i) => (
-                  <div key={i} className="relative w-20 h-24 border border-[#2A2A2A] overflow-hidden group">
+                  <div key={img} className="relative w-20 h-24 border border-[#2A2A2A] overflow-hidden group">
                     <img src={img} alt="" className="w-full h-full object-cover" />
                     <button onClick={() => set("images", f.images.filter((_, j) => j !== i))} className="absolute top-0 right-0 bg-black/70 p-1 text-[#c74446]"><X size={12} /></button>
                   </div>

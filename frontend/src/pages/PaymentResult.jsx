@@ -23,7 +23,7 @@ export default function PaymentResult() {
           if (!cleared.current) { clear(); cleared.current = true; }
           return;
         }
-      } catch {}
+      } catch (e) { console.error("PaymentResult poll error:", e); }
       if (active) setTimeout(poll, 2500);
     };
     poll();

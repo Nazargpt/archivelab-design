@@ -16,10 +16,10 @@ if not BASE_URL:
             if line.startswith('REACT_APP_BACKEND_URL='):
                 BASE_URL = line.split('=', 1)[1].strip().rstrip('/')
 
-ADMIN_EMAIL = "camila@archivelab.design"
-ADMIN_PASSWORD = "Archive2026!"
-CUSTOMER_EMAIL = "cliente@test.com"
-CUSTOMER_PASSWORD = "Cliente123!"
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "camila@archivelab.design")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Archive2026!")
+CUSTOMER_EMAIL = os.environ.get("TEST_CUSTOMER_EMAIL", "cliente@test.com")
+CUSTOMER_PASSWORD = os.environ.get("TEST_CUSTOMER_PASSWORD", "Cliente123!")
 SAFE_EMAIL = "delivered@resend.dev"
 
 
