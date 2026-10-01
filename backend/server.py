@@ -969,18 +969,57 @@ async def send_low_stock_email(product: dict, total: int, per_size: dict, thresh
     await send_email(to=SELLER_EMAIL, subject=f"⚠️ Stock bajo · {product.get('name','')} ({total}) · ARCHIVE LAB", html=html)
 
 
+async def send_sold_out_email(product: dict, waitlist: list):
+    if not SELLER_EMAIL:
+        return
+    if waitlist:
+        wl_rows = "".join(
+            f'<tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#111;font-size:13px">'
+            f'<b>{escape(w.get("name") or "—")}</b> · {escape(w.get("email") or "—")}'
+            f'{(" · talle " + escape(str(w.get("size")))) if w.get("size") else ""}</td></tr>'
+            for w in waitlist)
+        wl_block = (f'<b>{len(waitlist)} persona(s) en lista de espera — listas para contactar:</b>'
+                    f'<table style="width:100%;border-collapse:collapse;margin-top:6px">{wl_rows}</table>')
+    else:
+        wl_block = "No hay nadie en la lista de espera de esta pieza."
+    lines = [
+        f"La pieza <b>{escape(product.get('name',''))}</b> se agotó y pasó al <b>Archivo Histórico</b>.",
+        f'Código de diseño: {escape(str(product.get("design_code","")))}',
+        wl_block,
+        "Podés avisarles si reponés stock o preparar una próxima edición/liberación.",
+    ]
+    html = _seller_shell("Pieza agotada", lines, "Ver en el panel", f"{APP_BASE_URL}/admin")
+    await send_email(to=SELLER_EMAIL, subject=f"🔴 Agotada · {product.get('name','')} · ARCHIVE LAB", html=html)
+
+
 async def check_low_stock(product_id: str):
-    """Avisa (una vez) cuando una pieza baja al umbral; se rearma al reponer stock."""
+    """Avisa cuando una pieza baja al umbral y cuando llega a 0 (agotada → Archivo Histórico).
+    Cada aviso se manda una sola vez y se rearma al reponer stock."""
     p = await db.products.find_one({"id": product_id}, {"_id": 0})
     if not p:
         return
     s = await db.settings.find_one({"id": "main"}, {"_id": 0}) or {}
     threshold = int(s.get("low_stock_threshold", 5) or 5)
     per_size, total = await availability_summary(product_id)
-    already = bool(p.get("low_stock_notified"))
-    if total > threshold and already:
-        await db.products.update_one({"id": product_id}, {"$set": {"low_stock_notified": False}})
-    elif 0 < total <= threshold and not already:
+    low_notified = bool(p.get("low_stock_notified"))
+    sold_notified = bool(p.get("sold_out_notified"))
+    if total <= 0:
+        if not sold_notified:
+            await db.products.update_one({"id": product_id},
+                {"$set": {"sold_out_notified": True, "low_stock_notified": True}})
+            waitlist = []
+            async for w in db.waitlist.find({"kind": "product", "ref_id": product_id}, {"_id": 0}).sort("created_at", -1):
+                waitlist.append(w)
+            await send_sold_out_email(p, waitlist)
+        return
+    resets = {}
+    if sold_notified:
+        resets["sold_out_notified"] = False
+    if total > threshold and low_notified:
+        resets["low_stock_notified"] = False
+    if resets:
+        await db.products.update_one({"id": product_id}, {"$set": resets})
+    if 0 < total <= threshold and not low_notified:
         await db.products.update_one({"id": product_id}, {"$set": {"low_stock_notified": True}})
         await send_low_stock_email(p, total, per_size, threshold)
 
