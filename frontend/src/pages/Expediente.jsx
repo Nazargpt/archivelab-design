@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { ShoppingBag, ArrowLeft, Check } from "lucide-react";
 import api, { formatARS } from "@/lib/api";
 import { useCart } from "@/context/CartContext";
+import { WaitlistModal } from "@/components/WaitlistModal";
 
 export default function Expediente() {
   const { id } = useParams();
@@ -14,6 +15,7 @@ export default function Expediente() {
   const [active, setActive] = useState(0);
   const [size, setSize] = useState("");
   const [notfound, setNotfound] = useState(false);
+  const [showWaitlist, setShowWaitlist] = useState(false);
 
   useEffect(() => {
     api.get(`/products/${id}`).then((r) => {
@@ -115,6 +117,11 @@ export default function Expediente() {
                 className={`mt-6 w-full py-4 inline-flex items-center justify-center gap-3 dossier-label ${canBuy ? "btn-ink" : "bg-[#1C1C1C] text-[#555] cursor-not-allowed"}`}>
                 <ShoppingBag size={16} /> {canBuy ? "Agregar al carrito" : "Sin disponibilidad"}
               </button>
+              {p.available_total <= 0 && (
+                <button data-testid="waitlist-button" onClick={() => setShowWaitlist(true)} className="mt-3 w-full py-3 btn-outline-ink dossier-label">
+                  Avisame si vuelve
+                </button>
+              )}
             </div>
           )}
 
@@ -136,6 +143,8 @@ export default function Expediente() {
           </div>
         </div>
       </div>
+
+      {showWaitlist && <WaitlistModal kind="product" refId={p.id} title={p.name} onClose={() => setShowWaitlist(false)} />}
     </div>
   );
 }

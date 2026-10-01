@@ -17,7 +17,17 @@ from typing import List, Optional
 import jwt
 import bcrypt
 import qrcode
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 import requests
+import httpx
+import re
+import ipaddress
+from html import escape
+from html.parser import HTMLParser
+from urllib.parse import urlparse
 from fastapi import FastAPI, APIRouter, HTTPException, Request, UploadFile, File, Form, Header, Query, Depends
 from fastapi.responses import Response, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
@@ -37,11 +47,15 @@ APP_BASE_URL = os.environ.get('APP_BASE_URL', '').rstrip('/')
 CURRENCY = os.environ.get('CURRENCY', 'ARS')
 MP_ACCESS_TOKEN = os.environ.get('MP_ACCESS_TOKEN', '').strip()
 MP_MODE = os.environ.get('MP_MODE', 'test')
-
 STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
 STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
 EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 APP_NAME = "archivelab"
+
+EMAIL_BASE_URL = "https://integrations.emergentagent.com"
+EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY")
+EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "ARCHIVE LAB")
+EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("archivelab")
@@ -161,6 +175,109 @@ async def require_admin(request: Request):
     return user
 
 # ---------------------------------------------------------------------------
+# Email (Emergent-managed Resend) — guardrail gate copied as-is
+# ---------------------------------------------------------------------------
+_SHORTENERS = ("bit.ly", "tinyurl.com", "t.co", "is.gd", "cutt.ly", "goo.gl", "rebrand.ly")
+_CRED_ASK = ("reply with your password", "reply with the code", "send your password", "cvv",
+             "send us your password", "enter your password below", "confirm your card number",
+             "your full card number", "seed phrase", "recovery phrase", "verify your card",
+             "social security number", "confirm your bank details")
+_HOSTISH = re.compile(r"\b(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,})", re.I)
+
+def _host_ok(host: str) -> bool:
+    if not host or "xn--" in host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    return not any(host == s or host.endswith("." + s) for s in _SHORTENERS)
+
+def _same_site(shown: str, real: str) -> bool:
+    return shown == real or real.endswith("." + shown) or shown.endswith("." + real)
+
+class _EmailScan(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.tags, self.urls, self.anchors = set(), [], []
+        self._href, self._text = None, []
+    def handle_starttag(self, tag, attrs):
+        self.tags.add(tag.lower())
+        self.urls += [v for k, v in attrs if k.lower() in ("href", "src") and v]
+        if tag.lower() == "a":
+            self._href = dict((k.lower(), v) for k, v in attrs).get("href")
+            self._text = []
+    def handle_data(self, data):
+        if self._href is not None:
+            self._text.append(data)
+    def handle_endtag(self, tag):
+        if tag.lower() == "a" and self._href is not None:
+            self.anchors.append((self._href, "".join(self._text)))
+            self._href, self._text = None, []
+
+def _assert_safe_email(subject: str, html: str) -> None:
+    scan = _EmailScan(); scan.feed(html)
+    if scan.tags & {"form", "input", "textarea", "select"}:
+        raise ValueError("No forms or input fields in email (G2)")
+    body = f"{subject}\n{html}".lower()
+    for p in _CRED_ASK:
+        if p in body:
+            raise ValueError(f"Email asks the recipient for credentials: {p!r} (G2)")
+    for url in scan.urls:
+        low = url.strip().lower()
+        if low.startswith(("mailto:", "tel:", "cid:", "#")):
+            continue
+        if not low.startswith("https://"):
+            raise ValueError(f"Email links/assets must be absolute https: {url!r} (G3)")
+        host = urlparse(low).hostname or ""
+        if not _host_ok(host) or urlparse(low).username is not None:
+            raise ValueError(f"Shortened, numeric-host or credential-bearing URL: {url!r} (G3)")
+    for href, text in scan.anchors:
+        real = urlparse(href.strip().lower()).hostname or ""
+        if not real:
+            continue
+        for m in _HOSTISH.finditer(text):
+            if not _same_site(m.group(1).lower(), real):
+                raise ValueError(f"Anchor text {m.group(1)!r} != real link host {real!r} (G3)")
+
+async def send_email(*, to: str, subject: str, html: str) -> Optional[str]:
+    if not EMAIL_KEY:
+        logger.error("EMERGENT_EMAIL_KEY missing; skipping email send")
+        return None
+    _assert_safe_email(subject, html)
+    payload = {"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME}
+    if EMAIL_REPLY_TO:
+        payload["contact_email"] = EMAIL_REPLY_TO
+    try:
+        async with httpx.AsyncClient(timeout=30) as hc:
+            resp = await hc.post(f"{EMAIL_BASE_URL}/api/v1/email/send",
+                                 headers={"X-Email-Key": EMAIL_KEY}, json=payload)
+        resp.raise_for_status()
+        return resp.json().get("id")
+    except Exception as e:
+        logger.error(f"Email send error: {e}")
+        return None
+
+def _email_shell(title: str, lines: list, cta_label: str = "", cta_url: str = "") -> str:
+    inner = "".join(f'<p style="margin:0 0 14px;color:#3a3a3a;font-size:15px;line-height:1.6">{l}</p>' for l in lines)
+    cta = ""
+    if cta_label and cta_url:
+        cta = (f'<p style="margin:22px 0"><a href="{escape(cta_url)}" style="background:#111;color:#fff;'
+               f'text-decoration:none;padding:12px 24px;font-size:13px;letter-spacing:.12em;'
+               f'text-transform:uppercase;display:inline-block">{escape(cta_label)}</a></p>')
+    return (f'<table role="presentation" width="100%" style="background:#f6f5f2;padding:28px 0">'
+            f'<tr><td align="center"><table role="presentation" width="520" style="background:#fff;'
+            f'border:1px solid #e6e2dd"><tr><td style="padding:32px;font-family:Arial,Helvetica,sans-serif">'
+            f'<p style="margin:0 0 20px;font-size:22px;font-weight:800;letter-spacing:-.02em">ARCHIVE <span style="font-style:italic;font-weight:400">lab</span></p>'
+            f'<h1 style="margin:0 0 18px;font-size:20px;color:#111">{escape(title)}</h1>'
+            f'{inner}{cta}'
+            f'<p style="margin:26px 0 0;font-size:11px;color:#999;border-top:1px solid #eee;padding-top:14px">'
+            f'Recibís este correo porque te anotaste en ARCHIVE LAB. Nunca te pedimos tu contraseña ni datos de tarjeta por email.</p>'
+            f'</td></tr></table></td></tr></table>')
+
+
+# ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
 class RegisterIn(BaseModel):
@@ -254,6 +371,19 @@ class EventIn(BaseModel):
 class EventRegisterIn(BaseModel):
     name: str
     email: EmailStr
+
+class ReleaseIn(BaseModel):
+    title: str
+    description: str = ""
+    image: Optional[str] = None
+    teaser_date: str = ""
+    status: str = "draft"  # draft | published
+
+class WaitlistIn(BaseModel):
+    name: str
+    email: EmailStr
+    size: str = ""
+    consent: bool = False
 
 # ---------------------------------------------------------------------------
 # Reservation maintenance
@@ -357,8 +487,23 @@ async def logout(request: Request):
 # ---------------------------------------------------------------------------
 @api.get("/products")
 async def list_products(category: Optional[str] = None, vip: Optional[bool] = None,
-                        size: Optional[str] = None, availability: Optional[str] = None):
+                        size: Optional[str] = None, availability: Optional[str] = None,
+                        historic: Optional[bool] = None):
     await release_expired()
+    if historic:
+        items = []
+        async for p in db.products.find({"status": {"$in": ["published", "archived"]}, "vip": {"$ne": True}}, {"_id": 0}).sort("created_at", -1):
+            summary, total = await availability_summary(p["id"])
+            is_sold_out = bool(p.get("edition_total")) and total <= 0
+            if p.get("status") != "archived" and not is_sold_out:
+                continue  # still available or a prototype -> not historic
+            if category and p.get("category") != category:
+                continue
+            p["available_by_size"] = summary
+            p["available_total"] = total
+            p["historic"] = True
+            items.append(p)
+        return items
     q = {"status": "published"}
     if category:
         q["category"] = category
@@ -676,6 +821,182 @@ async def admin_event_registrations(event_id: str, admin=Depends(require_admin))
     return out
 
 # ---------------------------------------------------------------------------
+# Releases (próximas liberaciones) & waitlist
+# ---------------------------------------------------------------------------
+async def _join_waitlist(kind: str, ref_id: str, ref_title: str, body: WaitlistIn, user=None):
+    if not body.consent:
+        raise HTTPException(status_code=400, detail="Necesitamos tu consentimiento para avisarte")
+    email = body.email.lower()
+    existing = await db.waitlist.find_one({"kind": kind, "ref_id": ref_id, "email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Ya estás en la lista con ese email")
+    doc = {"id": f"wl_{uuid.uuid4().hex[:12]}", "kind": kind, "ref_id": ref_id, "ref_title": ref_title,
+           "name": body.name, "email": email, "size": body.size, "consent": True,
+           "user_id": (user["id"] if user else None), "notified": False, "created_at": iso(now_utc())}
+    await db.waitlist.insert_one(dict(doc))
+    intro = ("Te sumamos a la lista de espera de esta próxima liberación." if kind == "release"
+             else "Te vamos a avisar si esta pieza vuelve al archivo.")
+    html = _email_shell(f"Estás en la lista · {ref_title}",
+        [f"Hola {escape(body.name)},", intro,
+         ("Talle de interés: " + escape(body.size)) if body.size else "",
+         "Cuando haya novedades, te escribimos a este correo. Sin spam, sin promesas vacías."],
+        "Ver el archivo", f"{APP_BASE_URL}/archivo")
+    await send_email(to=email, subject=f"Estás en la lista · {ref_title}", html=html)
+    return {"ok": True}
+
+@api.get("/releases")
+async def list_releases():
+    out = []
+    async for r in db.releases.find({"status": "published"}, {"_id": 0}).sort("created_at", -1):
+        r["waitlist_count"] = await db.waitlist.count_documents({"kind": "release", "ref_id": r["id"]})
+        out.append(r)
+    return out
+
+@api.post("/releases/{release_id}/waitlist")
+async def release_waitlist(release_id: str, body: WaitlistIn, request: Request):
+    r = await db.releases.find_one({"id": release_id}, {"_id": 0})
+    if not r or r.get("status") != "published":
+        raise HTTPException(status_code=404, detail="Liberación no encontrada")
+    user = await get_optional_user(request)
+    return await _join_waitlist("release", release_id, r["title"], body, user)
+
+@api.post("/products/{product_id}/waitlist")
+async def product_waitlist(product_id: str, body: WaitlistIn, request: Request):
+    p = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not p:
+        raise HTTPException(status_code=404, detail="Pieza no encontrada")
+    user = await get_optional_user(request)
+    return await _join_waitlist("product", product_id, p["name"], body, user)
+
+@api.get("/admin/releases")
+async def admin_list_releases(admin=Depends(require_admin)):
+    out = []
+    async for r in db.releases.find({}, {"_id": 0}).sort("created_at", -1):
+        r["waitlist_count"] = await db.waitlist.count_documents({"kind": "release", "ref_id": r["id"]})
+        out.append(r)
+    return out
+
+@api.post("/admin/releases")
+async def admin_create_release(body: ReleaseIn, admin=Depends(require_admin)):
+    rid = f"rel_{uuid.uuid4().hex[:12]}"
+    doc = body.model_dump()
+    doc["id"] = rid
+    doc["created_at"] = iso(now_utc())
+    await db.releases.insert_one(doc)
+    return clean(await db.releases.find_one({"id": rid}))
+
+@api.put("/admin/releases/{release_id}")
+async def admin_update_release(release_id: str, body: ReleaseIn, admin=Depends(require_admin)):
+    r = await db.releases.update_one({"id": release_id}, {"$set": body.model_dump()})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Liberación no encontrada")
+    return clean(await db.releases.find_one({"id": release_id}))
+
+@api.delete("/admin/releases/{release_id}")
+async def admin_delete_release(release_id: str, admin=Depends(require_admin)):
+    await db.waitlist.delete_many({"kind": "release", "ref_id": release_id})
+    await db.releases.delete_one({"id": release_id})
+    return {"ok": True}
+
+@api.get("/admin/releases/{release_id}/waitlist")
+async def admin_release_waitlist(release_id: str, admin=Depends(require_admin)):
+    out = []
+    async for w in db.waitlist.find({"kind": "release", "ref_id": release_id}, {"_id": 0}).sort("created_at", -1):
+        out.append(w)
+    return out
+
+@api.get("/admin/products/{product_id}/waitlist")
+async def admin_product_waitlist(product_id: str, admin=Depends(require_admin)):
+    out = []
+    async for w in db.waitlist.find({"kind": "product", "ref_id": product_id}, {"_id": 0}).sort("created_at", -1):
+        out.append(w)
+    return out
+
+async def _notify_waitlist(kind: str, ref_id: str, title: str, message: str, cta_url: str):
+    sent = 0
+    async for w in db.waitlist.find({"kind": kind, "ref_id": ref_id}):
+        html = _email_shell(f"Novedades · {title}",
+            [f"Hola {escape(w.get('name',''))},", escape(message),
+             "Te avisamos porque te anotaste en la lista de espera del archivo."],
+            "Ir al archivo", cta_url)
+        res = await send_email(to=w["email"], subject=f"Novedades · {title}", html=html)
+        if res is not None:
+            sent += 1
+        await db.waitlist.update_one({"id": w["id"]}, {"$set": {"notified": True}})
+    return sent
+
+@api.post("/admin/releases/{release_id}/notify")
+async def admin_notify_release(release_id: str, admin=Depends(require_admin)):
+    r = await db.releases.find_one({"id": release_id}, {"_id": 0})
+    if not r:
+        raise HTTPException(status_code=404, detail="Liberación no encontrada")
+    sent = await _notify_waitlist("release", release_id, r["title"],
+        f"Ya se liberó: {r['title']}. Entrá al archivo antes de que agote.", f"{APP_BASE_URL}/archivo")
+    return {"sent": sent}
+
+@api.post("/admin/products/{product_id}/notify")
+async def admin_notify_product(product_id: str, admin=Depends(require_admin)):
+    p = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not p:
+        raise HTTPException(status_code=404, detail="Pieza no encontrada")
+    sent = await _notify_waitlist("product", product_id, p["name"],
+        f"Volvió al archivo: {p['name']}. Hay unidades disponibles de nuevo.",
+        f"{APP_BASE_URL}/pieza-expediente/{product_id}")
+    return {"sent": sent}
+
+@api.get("/certificate/{unit_code}/pdf")
+async def certificate_pdf(unit_code: str):
+    u = await db.units.find_one({"unit_code": unit_code}, {"_id": 0})
+    if not u:
+        raise HTTPException(status_code=404, detail="Código no encontrado")
+    p = await db.products.find_one({"id": u["product_id"]}, {"_id": 0})
+    if not p:
+        raise HTTPException(status_code=404, detail="Pieza no encontrada")
+    qbuf = io.BytesIO()
+    qrcode.make(f"{APP_BASE_URL}/pieza/{unit_code}").save(qbuf, format="PNG")
+    qbuf.seek(0)
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    w, h = A4
+    c.setFillColorRGB(0.04, 0.04, 0.04)
+    c.rect(0, 0, w, h, fill=1, stroke=0)
+    c.setFillColorRGB(0.96, 0.95, 0.94)
+    c.setFont("Helvetica-Bold", 30)
+    c.drawString(28 * mm, h - 40 * mm, "ARCHIVE")
+    c.setFont("Helvetica-Oblique", 20)
+    c.drawString(85 * mm, h - 40 * mm, "lab")
+    c.setFont("Helvetica", 9)
+    c.setFillColorRGB(0.6, 0.58, 0.54)
+    c.drawString(28 * mm, h - 48 * mm, "FICHA DE PIEZA DE ARCHIVO")
+    c.setStrokeColorRGB(0.2, 0.2, 0.2)
+    c.line(28 * mm, h - 54 * mm, w - 28 * mm, h - 54 * mm)
+    c.setFillColorRGB(0.96, 0.95, 0.94)
+    c.setFont("Helvetica-Bold", 22)
+    c.drawString(28 * mm, h - 70 * mm, p["name"][:34])
+    rows = [("Diseño", p["design_code"]), ("Edición", p.get("edition_name", "")),
+            ("Código único", u["unit_code"]),
+            ("Ejemplar", f"{u['edition_number']} de {p['edition_total']}" if p.get("edition_total") else str(u["edition_number"])),
+            ("Talle", u.get("size", "")), ("Color", u.get("color", "")), ("Creadora", "Camila Guerra")]
+    y = h - 86 * mm
+    for label, val in rows:
+        c.setFont("Helvetica", 8)
+        c.setFillColorRGB(0.6, 0.58, 0.54)
+        c.drawString(28 * mm, y, label.upper())
+        c.setFont("Helvetica-Bold", 12)
+        c.setFillColorRGB(0.9, 0.88, 0.86)
+        c.drawString(28 * mm, y - 6 * mm, str(val))
+        y -= 15 * mm
+    c.drawImage(ImageReader(qbuf), w - 70 * mm, 30 * mm, 42 * mm, 42 * mm, mask="auto")
+    c.setFont("Helvetica", 8)
+    c.setFillColorRGB(0.6, 0.58, 0.54)
+    c.drawString(w - 70 * mm, 26 * mm, f"{APP_BASE_URL}/pieza/{unit_code}")
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return Response(content=buf.getvalue(), media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="archivelab_{unit_code}.pdf"'})
+
+# ---------------------------------------------------------------------------
 # Settings & content (public read)
 # ---------------------------------------------------------------------------
 @api.get("/settings")
@@ -894,6 +1215,7 @@ async def startup():
     await seed_demo()
     await seed_events()
     await seed_content()
+    await seed_releases()
     try:
         init_storage()
         logger.info("Storage initialized")
@@ -1158,6 +1480,23 @@ async def seed_content():
             "contact_whatsapp": "+54 9 11 5555 5555", "instagram": "archivelab",
             "pinterest": "archivelab", "address": "Buenos Aires, Argentina"})
     logger.info("Demo content seeded")
+
+
+async def seed_releases():
+    if await db.releases.count_documents({}) > 0:
+        return
+    img = lambda pid: f"https://images.unsplash.com/photo-{pid}?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400"
+    rels = [
+        {"title": "Liberación II — Denim de noche", "description": "La próxima serie de denim intervenido, en tonos profundos. Pocas unidades, sin reposición. Anotate para acceder antes que nadie.",
+         "image": img("1699379012687-7da0cd15f3cb"), "teaser_date": "Próximamente", "status": "published"},
+        {"title": "Cápsula Corsetería — Archivo privado", "description": "Una cápsula reducida de corsetería de autor. Acceso anticipado para miembros del archivo.",
+         "image": img("1652397902034-9f9483171e74"), "teaser_date": "A confirmar", "status": "published"},
+    ]
+    for r in rels:
+        r["id"] = f"rel_{uuid.uuid4().hex[:12]}"
+        r["created_at"] = iso(now_utc())
+        await db.releases.insert_one(dict(r))
+    logger.info("Demo releases seeded")
 
 @app.on_event("shutdown")
 async def shutdown():

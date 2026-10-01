@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Printer } from "lucide-react";
-import api from "@/lib/api";
+import { Printer, Download } from "lucide-react";
+import api, { API } from "@/lib/api";
 
 export default function Certificate() {
   const { code } = useParams();
@@ -11,7 +11,8 @@ export default function Certificate() {
 
   return (
     <div className="px-4 py-10 max-w-2xl mx-auto">
-      <div className="flex justify-end mb-4 print:hidden">
+      <div className="flex justify-end gap-3 mb-4 print:hidden">
+        <a href={`${API}/certificate/${code}/pdf`} target="_blank" rel="noreferrer" data-testid="download-pdf" className="btn-outline-ink px-5 py-2.5 dossier-label inline-flex items-center gap-2"><Download size={14} /> Descargar PDF</a>
         <button onClick={() => window.print()} data-testid="print-certificate" className="btn-ink px-5 py-2.5 dossier-label inline-flex items-center gap-2"><Printer size={14} /> Imprimir ficha</button>
       </div>
       <div id="cert" className="bg-[#0E0E0E] border border-[#2A2A2A] p-10 print:bg-white print:text-black">

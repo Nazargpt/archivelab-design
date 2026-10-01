@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import ProductEditor from "@/pages/admin/ProductEditor";
 
-const TABS = [["piezas", "Piezas"], ["eventos", "Eventos"], ["pedidos", "Pedidos"], ["contenido", "Contenido"], ["ajustes", "Ajustes"]];
+const TABS = [["piezas", "Piezas"], ["eventos", "Eventos"], ["liberaciones", "Liberaciones"], ["pedidos", "Pedidos"], ["contenido", "Contenido"], ["ajustes", "Ajustes"]];
 const field = "mt-1.5 bg-[#121212] border-[#2A2A2A] text-[#F5F4F0]";
 const lbl = "dossier-label text-[#6E675E]";
 
@@ -27,6 +27,7 @@ export default function Admin() {
 
       {tab === "piezas" && <PiezasTab />}
       {tab === "eventos" && <EventosTab />}
+      {tab === "liberaciones" && <LiberacionesTab />}
       {tab === "pedidos" && <PedidosTab />}
       {tab === "contenido" && <ContenidoTab />}
       {tab === "ajustes" && <AjustesTab />}
@@ -219,6 +220,127 @@ function RegsModal({ event, onClose }) {
             <div key={r.id} className="flex items-center justify-between py-2.5 border-b border-[#161616] text-sm">
               <div><div className="text-[#F5F4F0]">{r.name}</div><div className="text-[#6E675E] text-xs">{r.email}</div></div>
               <span className={`dossier-label px-2 py-1 ${r.status === "pagada" ? "bg-[#1C241D] text-[#72B078]" : r.status === "anotada" ? "bg-[#2A2A2A] text-[#A39B8E]" : "bg-[#2A2415] text-[#b9942f]"}`}>{r.status}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LiberacionesTab() {
+  const [releases, setReleases] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [wlFor, setWlFor] = useState(null);
+
+  const load = () => api.get("/admin/releases").then((r) => setReleases(r.data)).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const del = async (id, e) => {
+    e.stopPropagation();
+    if (!window.confirm("¿Eliminar esta liberación?")) return;
+    try { await api.delete(`/admin/releases/${id}`); toast.success("Liberación eliminada"); load(); }
+    catch (err) { toast.error(errMsg(err)); }
+  };
+  const notify = async (id, e) => {
+    e.stopPropagation();
+    if (!window.confirm("¿Enviar email de novedad a toda la lista de espera?")) return;
+    try { const { data } = await api.post(`/admin/releases/${id}/notify`); toast.success(`Emails enviados: ${data.sent}`); }
+    catch (err) { toast.error(errMsg(err)); }
+  };
+
+  return (
+    <div>
+      <button data-testid="new-release-button" onClick={() => setEditing({})} className="btn-ink px-6 py-3 dossier-label inline-flex items-center gap-2 mb-6"><Plus size={16} /> Nueva liberación</button>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {releases.map((r) => (
+          <div key={r.id} data-testid={`admin-release-${r.id}`} onClick={() => setEditing(r)} className="museum-frame p-4 flex gap-4 cursor-pointer hover-lift">
+            <div className="w-16 h-16 bg-[#161616] overflow-hidden shrink-0">{r.image && <img src={r.image} alt="" className="w-full h-full object-cover" />}</div>
+            <div className="flex-1 min-w-0">
+              <div className="dossier-label text-[#6E675E]">{r.teaser_date || "s/fecha"}</div>
+              <h3 className="font-display font-bold uppercase tracking-tight text-[#F5F4F0] truncate">{r.title}</h3>
+              <div className="flex items-center gap-3 mt-1 text-xs">
+                <span className={`dossier-label ${r.status === "published" ? "text-[#72B078]" : "text-[#A39B8E]"}`}>{r.status}</span>
+                <span className="text-[#6E675E]">{r.waitlist_count} en lista</span>
+              </div>
+              <div className="flex gap-3 mt-2">
+                <button data-testid={`release-wl-${r.id}`} onClick={(e) => { e.stopPropagation(); setWlFor(r); }} className="dossier-label text-[#8C857B] hover:text-[#F5F4F0] inline-flex items-center gap-1"><Users size={12} /> lista</button>
+                <button data-testid={`release-notify-${r.id}`} onClick={(e) => notify(r.id, e)} className="dossier-label text-[#E6E2DD] hover:text-white">avisar novedad</button>
+                <button onClick={(e) => del(r.id, e)} className="dossier-label text-[#6E675E] hover:text-[#9E2A2B]">eliminar</button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {editing && <ReleaseEditor release={editing.id ? editing : null} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+      {wlFor && <WaitlistModalAdmin release={wlFor} onClose={() => setWlFor(null)} />}
+    </div>
+  );
+}
+
+function ReleaseEditor({ release, onClose, onSaved }) {
+  const [f, setF] = useState({ title: "", description: "", image: "", teaser_date: "", status: "draft" });
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { if (release) setF({ ...f, ...release, image: release.image || "" }); }, [release]);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const save = async () => {
+    if (!f.title) return toast.error("El título es obligatorio");
+    setSaving(true);
+    const payload = { ...f, image: f.image || null };
+    try {
+      if (release?.id) await api.put(`/admin/releases/${release.id}`, payload);
+      else await api.post("/admin/releases", payload);
+      toast.success("Liberación guardada"); onSaved();
+    } catch (e) { toast.error(errMsg(e)); }
+    setSaving(false);
+  };
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm overflow-y-auto" data-testid="release-editor">
+      <div className="min-h-screen flex items-start justify-center p-4 py-10">
+        <div className="bg-[#0E0E0E] border border-[#2A2A2A] w-full max-w-xl">
+          <div className="flex items-center justify-between p-5 border-b border-[#1C1C1C]">
+            <h2 className="font-display font-bold uppercase tracking-tight text-xl text-[#F5F4F0]">{release?.id ? "Editar liberación" : "Nueva liberación"}</h2>
+            <button onClick={onClose} className="text-[#8C857B] hover:text-[#F5F4F0]"><X size={20} /></button>
+          </div>
+          <div className="p-5 space-y-4">
+            <div><Label className={lbl}>Título</Label><Input data-testid="rel-title" className={field} value={f.title} onChange={(e) => set("title", e.target.value)} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label className={lbl}>Fecha teaser (texto)</Label><Input className={field} value={f.teaser_date} onChange={(e) => set("teaser_date", e.target.value)} placeholder="Próximamente" /></div>
+              <div>
+                <Label className={lbl}>Estado</Label>
+                <select data-testid="rel-status" value={f.status} onChange={(e) => set("status", e.target.value)} className={`${field} w-full h-10 px-3 rounded-md border`}>
+                  <option value="draft">Borrador</option><option value="published">Publicada</option>
+                </select>
+              </div>
+            </div>
+            <div><Label className={lbl}>URL de imagen</Label><Input className={field} value={f.image} onChange={(e) => set("image", e.target.value)} placeholder="https://…" /></div>
+            <div><Label className={lbl}>Descripción</Label><Textarea rows={3} className={field} value={f.description} onChange={(e) => set("description", e.target.value)} /></div>
+          </div>
+          <div className="flex gap-3 p-5 border-t border-[#1C1C1C]">
+            <button data-testid="rel-save" onClick={save} disabled={saving} className="btn-ink px-7 py-3 dossier-label disabled:opacity-60">{saving ? "Guardando…" : "Guardar liberación"}</button>
+            <button onClick={onClose} className="btn-outline-ink px-7 py-3 dossier-label">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WaitlistModalAdmin({ release, onClose }) {
+  const [wl, setWl] = useState([]);
+  useEffect(() => { api.get(`/admin/releases/${release.id}/waitlist`).then((r) => setWl(r.data)).catch(() => {}); }, [release]);
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[#0E0E0E] border border-[#2A2A2A] w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-[#1C1C1C]">
+          <h2 className="font-display font-bold uppercase tracking-tight text-lg text-[#F5F4F0]">Lista de espera · {release.title}</h2>
+          <button onClick={onClose} className="text-[#8C857B] hover:text-[#F5F4F0]"><X size={18} /></button>
+        </div>
+        <div className="p-5 max-h-[60vh] overflow-y-auto no-scrollbar">
+          {wl.length === 0 ? <p className="text-[#8C857B] text-sm">Nadie en la lista todavía.</p> : wl.map((w) => (
+            <div key={w.id} className="flex items-center justify-between py-2.5 border-b border-[#161616] text-sm">
+              <div><div className="text-[#F5F4F0]">{w.name}</div><div className="text-[#6E675E] text-xs">{w.email}{w.size ? ` · talle ${w.size}` : ""}</div></div>
+              {w.notified && <span className="dossier-label text-[#72B078]">avisada</span>}
             </div>
           ))}
         </div>

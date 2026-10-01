@@ -147,6 +147,7 @@ export default function ProductEditor({ product, onClose, onSaved }) {
             </div>
 
             {product?.id && <UnitsManager productId={product.id} designCode={f.design_code} token={token} />}
+            {product?.id && <ProductWaitlist productId={product.id} />}
           </div>
 
           <div className="flex gap-3 p-5 border-t border-[#1C1C1C] sticky bottom-0 bg-[#0E0E0E]">
@@ -215,6 +216,35 @@ function UnitsManager({ productId, designCode, token }) {
             <div className="font-mono2 text-xs text-black mt-3">{qr.unit_code}</div>
             <div className="text-[10px] text-neutral-500 mt-1 max-w-[220px] break-all">{qr.public_url}</div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductWaitlist({ productId }) {
+  const [wl, setWl] = useState([]);
+  const load = () => api.get(`/admin/products/${productId}/waitlist`).then((r) => setWl(r.data)).catch(() => {});
+  useEffect(() => { load(); }, [productId]);
+  const notify = async () => {
+    if (!window.confirm("¿Avisar por email a toda la lista que la pieza volvió?")) return;
+    try { const { data } = await api.post(`/admin/products/${productId}/notify`); toast.success(`Emails enviados: ${data.sent}`); load(); }
+    catch (e) { toast.error(errMsg(e)); }
+  };
+  return (
+    <div className="border-t border-[#1C1C1C] pt-5">
+      <div className="flex items-center justify-between mb-3">
+        <Label className={lbl}>Lista de espera · "avisame si vuelve"</Label>
+        {wl.length > 0 && <button data-testid="notify-product" onClick={notify} className="dossier-label text-[#E6E2DD] hover:text-white">Avisar que volvió</button>}
+      </div>
+      {wl.length === 0 ? <p className="text-xs text-[#6E675E]">Nadie anotado todavía.</p> : (
+        <div className="max-h-40 overflow-y-auto no-scrollbar space-y-1.5">
+          {wl.map((w) => (
+            <div key={w.id} className="flex items-center justify-between bg-[#121212] border border-[#1C1C1C] px-3 py-2 text-xs">
+              <span className="text-[#D8D3CB]">{w.name} · {w.email}{w.size ? ` · talle ${w.size}` : ""}</span>
+              {w.notified && <span className="dossier-label text-[#72B078]">avisada</span>}
+            </div>
+          ))}
         </div>
       )}
     </div>

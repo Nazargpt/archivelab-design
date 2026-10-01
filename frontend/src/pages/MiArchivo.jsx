@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { LogOut, Package, Plus } from "lucide-react";
-import api, { formatARS, errMsg } from "@/lib/api";
+import api, { formatARS, errMsg, API } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Input } from "@/components/ui/input";
 
@@ -68,6 +68,7 @@ export default function MiArchivo() {
                   <div className="flex gap-3 mt-4">
                     <Link to={`/pieza/${pc.unit_code}`} className="dossier-label text-[#8C857B] hover:text-[#F5F4F0]">ficha pública</Link>
                     <Link to={`/certificado/${pc.unit_code}`} data-testid={`cert-${pc.unit_code}`} className="dossier-label text-[#E6E2DD] hover:text-white">certificado</Link>
+                    <a href={`${API}/certificate/${pc.unit_code}/pdf`} target="_blank" rel="noreferrer" data-testid={`pdf-${pc.unit_code}`} className="dossier-label text-[#8C857B] hover:text-[#F5F4F0]">pdf</a>
                   </div>
                 </div>
               </div>
