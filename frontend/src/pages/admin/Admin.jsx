@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
+import { Plus, X, Trash2, Users } from "lucide-react";
 import api, { formatARS, errMsg, CATEGORIES } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import ProductEditor from "@/pages/admin/ProductEditor";
 
-const TABS = [["piezas", "Piezas"], ["pedidos", "Pedidos"], ["contenido", "Contenido"], ["ajustes", "Ajustes"]];
+const TABS = [["piezas", "Piezas"], ["eventos", "Eventos"], ["pedidos", "Pedidos"], ["contenido", "Contenido"], ["ajustes", "Ajustes"]];
 const field = "mt-1.5 bg-[#121212] border-[#2A2A2A] text-[#F5F4F0]";
 const lbl = "dossier-label text-[#6E675E]";
 
@@ -26,6 +26,7 @@ export default function Admin() {
       </div>
 
       {tab === "piezas" && <PiezasTab />}
+      {tab === "eventos" && <EventosTab />}
       {tab === "pedidos" && <PedidosTab />}
       {tab === "contenido" && <ContenidoTab />}
       {tab === "ajustes" && <AjustesTab />}
@@ -97,6 +98,131 @@ function PedidosTab() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function EventosTab() {
+  const [events, setEvents] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [regsFor, setRegsFor] = useState(null);
+
+  const load = () => api.get("/admin/events").then((r) => setEvents(r.data)).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const del = async (id, e) => {
+    e.stopPropagation();
+    if (!window.confirm("¿Eliminar este evento?")) return;
+    try { await api.delete(`/admin/events/${id}`); toast.success("Evento eliminado"); load(); }
+    catch (err) { toast.error(errMsg(err)); }
+  };
+
+  return (
+    <div>
+      <button data-testid="new-event-button" onClick={() => setEditing({})} className="btn-ink px-6 py-3 dossier-label inline-flex items-center gap-2 mb-6"><Plus size={16} /> Nuevo evento</button>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {events.map((ev) => (
+          <div key={ev.id} data-testid={`admin-event-${ev.id}`} onClick={() => setEditing(ev)} className="museum-frame p-4 flex gap-4 cursor-pointer hover-lift">
+            <div className="w-16 h-16 bg-[#161616] overflow-hidden shrink-0">{ev.image && <img src={ev.image} alt="" className="w-full h-full object-cover" />}</div>
+            <div className="flex-1 min-w-0">
+              <div className="dossier-label text-[#6E675E]">{ev.type} · {ev.date || "s/fecha"}</div>
+              <h3 className="font-display font-bold uppercase tracking-tight text-[#F5F4F0] truncate">{ev.title}</h3>
+              <div className="flex items-center gap-3 mt-1 text-xs">
+                <span className={`dossier-label ${ev.status === "published" ? "text-[#72B078]" : "text-[#A39B8E]"}`}>{ev.status}</span>
+                <span className="text-[#8C857B]">{ev.price != null ? formatARS(ev.price) : "libre"}</span>
+                <span className="text-[#6E675E]">{ev.registered_count} anotad{ev.capacity ? `/${ev.capacity}` : "@s"}</span>
+              </div>
+              <div className="flex gap-3 mt-2">
+                <button data-testid={`event-regs-${ev.id}`} onClick={(e) => { e.stopPropagation(); setRegsFor(ev); }} className="dossier-label text-[#8C857B] hover:text-[#F5F4F0] inline-flex items-center gap-1"><Users size={12} /> inscriptas</button>
+                <button onClick={(e) => del(ev.id, e)} className="dossier-label text-[#6E675E] hover:text-[#9E2A2B]">eliminar</button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {editing && <EventEditor event={editing.id ? editing : null} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+      {regsFor && <RegsModal event={regsFor} onClose={() => setRegsFor(null)} />}
+    </div>
+  );
+}
+
+function EventEditor({ event, onClose, onSaved }) {
+  const [f, setF] = useState({ title: "", type: "desfile", description: "", date: "", location: "", image: "", price: "", capacity: "", status: "draft" });
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { if (event) setF({ ...f, ...event, price: event.price ?? "", capacity: event.capacity ?? "", image: event.image || "" }); }, [event]);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const save = async () => {
+    if (!f.title) return toast.error("El título es obligatorio");
+    setSaving(true);
+    const payload = { ...f, price: f.price === "" ? null : Number(f.price), capacity: f.capacity === "" ? null : Number(f.capacity), image: f.image || null };
+    try {
+      if (event?.id) await api.put(`/admin/events/${event.id}`, payload);
+      else await api.post("/admin/events", payload);
+      toast.success("Evento guardado"); onSaved();
+    } catch (e) { toast.error(errMsg(e)); }
+    setSaving(false);
+  };
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm overflow-y-auto" data-testid="event-editor">
+      <div className="min-h-screen flex items-start justify-center p-4 py-10">
+        <div className="bg-[#0E0E0E] border border-[#2A2A2A] w-full max-w-xl">
+          <div className="flex items-center justify-between p-5 border-b border-[#1C1C1C]">
+            <h2 className="font-display font-bold uppercase tracking-tight text-xl text-[#F5F4F0]">{event?.id ? "Editar evento" : "Nuevo evento"}</h2>
+            <button onClick={onClose} className="text-[#8C857B] hover:text-[#F5F4F0]"><X size={20} /></button>
+          </div>
+          <div className="p-5 space-y-4">
+            <div><Label className={lbl}>Título</Label><Input data-testid="ev-title" className={field} value={f.title} onChange={(e) => set("title", e.target.value)} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className={lbl}>Tipo</Label>
+                <select data-testid="ev-type" value={f.type} onChange={(e) => set("type", e.target.value)} className={`${field} w-full h-10 px-3 rounded-md border`}>
+                  <option value="desfile">Desfile</option><option value="lanzamiento">Lanzamiento</option>
+                  <option value="exposicion">Exposición</option><option value="presentacion">Presentación</option>
+                </select>
+              </div>
+              <div>
+                <Label className={lbl}>Estado</Label>
+                <select data-testid="ev-status" value={f.status} onChange={(e) => set("status", e.target.value)} className={`${field} w-full h-10 px-3 rounded-md border`}>
+                  <option value="draft">Borrador</option><option value="published">Publicado</option>
+                </select>
+              </div>
+              <div><Label className={lbl}>Fecha (texto)</Label><Input className={field} value={f.date} onChange={(e) => set("date", e.target.value)} placeholder="A confirmar" /></div>
+              <div><Label className={lbl}>Lugar</Label><Input className={field} value={f.location} onChange={(e) => set("location", e.target.value)} /></div>
+              <div><Label className={lbl}>Precio ARS (vacío = libre)</Label><Input data-testid="ev-price" type="number" className={field} value={f.price} onChange={(e) => set("price", e.target.value)} /></div>
+              <div><Label className={lbl}>Cupos (vacío = sin tope)</Label><Input type="number" className={field} value={f.capacity} onChange={(e) => set("capacity", e.target.value)} /></div>
+            </div>
+            <div><Label className={lbl}>URL de imagen</Label><Input className={field} value={f.image} onChange={(e) => set("image", e.target.value)} placeholder="https://…" /></div>
+            <div><Label className={lbl}>Descripción</Label><Textarea rows={3} className={field} value={f.description} onChange={(e) => set("description", e.target.value)} /></div>
+          </div>
+          <div className="flex gap-3 p-5 border-t border-[#1C1C1C]">
+            <button data-testid="ev-save" onClick={save} disabled={saving} className="btn-ink px-7 py-3 dossier-label disabled:opacity-60">{saving ? "Guardando…" : "Guardar evento"}</button>
+            <button onClick={onClose} className="btn-outline-ink px-7 py-3 dossier-label">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RegsModal({ event, onClose }) {
+  const [regs, setRegs] = useState([]);
+  useEffect(() => { api.get(`/admin/events/${event.id}/registrations`).then((r) => setRegs(r.data)).catch(() => {}); }, [event]);
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[#0E0E0E] border border-[#2A2A2A] w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-[#1C1C1C]">
+          <h2 className="font-display font-bold uppercase tracking-tight text-lg text-[#F5F4F0]">Inscriptas · {event.title}</h2>
+          <button onClick={onClose} className="text-[#8C857B] hover:text-[#F5F4F0]"><X size={18} /></button>
+        </div>
+        <div className="p-5 max-h-[60vh] overflow-y-auto no-scrollbar">
+          {regs.length === 0 ? <p className="text-[#8C857B] text-sm">Sin inscripciones todavía.</p> : regs.map((r) => (
+            <div key={r.id} className="flex items-center justify-between py-2.5 border-b border-[#161616] text-sm">
+              <div><div className="text-[#F5F4F0]">{r.name}</div><div className="text-[#6E675E] text-xs">{r.email}</div></div>
+              <span className={`dossier-label px-2 py-1 ${r.status === "pagada" ? "bg-[#1C241D] text-[#72B078]" : r.status === "anotada" ? "bg-[#2A2A2A] text-[#A39B8E]" : "bg-[#2A2415] text-[#b9942f]"}`}>{r.status}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

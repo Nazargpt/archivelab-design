@@ -41,9 +41,9 @@ export default function DemoCheckout() {
         {order && (
           <div className="mt-6 border-t border-[#2A2A2A] pt-4">
             <div className="dossier-label text-[#6E675E] mb-3">Pedido {order.id}</div>
-            {order.items?.map((i) => (
-              <div key={i.unit_id} className="flex justify-between text-sm mb-2">
-                <span className="text-[#A39B8E]">{i.name} · {i.size} · Nº {i.edition_number}</span>
+            {order.items?.map((i, idx) => (
+              <div key={i.unit_id || idx} className="flex justify-between text-sm mb-2">
+                <span className="text-[#A39B8E]">{i.name}{i.size ? ` · ${i.size}` : ""}{i.edition_number ? ` · Nº ${i.edition_number}` : ""}</span>
                 <span className="text-[#E6E2DD]">{formatARS(i.price)}</span>
               </div>
             ))}

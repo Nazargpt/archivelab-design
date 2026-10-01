@@ -240,6 +240,21 @@ class LegalIn(BaseModel):
     terms: str = ""
     returns: str = ""
 
+class EventIn(BaseModel):
+    title: str
+    type: str = "desfile"  # desfile | lanzamiento | exposicion | presentacion
+    description: str = ""
+    date: str = ""  # free text / ISO
+    location: str = ""
+    image: Optional[str] = None
+    price: Optional[float] = None  # None = evento gratuito (anotarse)
+    capacity: Optional[int] = None
+    status: str = "draft"  # draft | published
+
+class EventRegisterIn(BaseModel):
+    name: str
+    email: EmailStr
+
 # ---------------------------------------------------------------------------
 # Reservation maintenance
 # ---------------------------------------------------------------------------
@@ -439,7 +454,7 @@ async def checkout(body: CheckoutIn, request: Request):
         raise
 
     order_id = f"order_{uuid.uuid4().hex[:14]}"
-    order = {"id": order_id, "status": "created", "items": line_items, "total": total,
+    order = {"id": order_id, "status": "created", "kind": "pieces", "items": line_items, "total": total,
              "currency": CURRENCY, "user_id": user["id"] if user else None,
              "guest_email": (body.guest_email.lower() if body.guest_email else (user["email"] if user else None)),
              "guest_name": body.guest_name or (user["name"] if user else None),
@@ -476,6 +491,9 @@ async def mark_order_paid(order_id: str, payment_info: dict):
     if not order or order.get("status") == "paid":
         return
     await db.orders.update_one({"id": order_id}, {"$set": {"status": "paid", "payment": payment_info, "paid_at": iso(now_utc())}})
+    if order.get("kind") == "event":
+        await db.event_registrations.update_many({"order_id": order_id}, {"$set": {"status": "pagada"}})
+        return
     for li in order.get("items", []):
         await db.units.update_one({"id": li["unit_id"]}, {"$set": {
             "status": "vendida", "reserved_until": None, "order_id": order_id},
@@ -534,6 +552,128 @@ async def claim_order(order_id: str, user=Depends(require_user)):
         raise HTTPException(status_code=403, detail="Este pedido pertenece a otro email. Verificá la titularidad.")
     await db.orders.update_one({"id": order_id}, {"$set": {"user_id": user["id"]}})
     return {"ok": True}
+
+# ---------------------------------------------------------------------------
+# Events & tickets
+# ---------------------------------------------------------------------------
+async def event_public(ev):
+    cnt = await db.event_registrations.count_documents({"event_id": ev["id"], "status": {"$in": ["anotada", "pagada"]}})
+    ev["registered_count"] = cnt
+    ev["spots_left"] = (ev["capacity"] - cnt) if ev.get("capacity") else None
+    ev["sold_out"] = bool(ev.get("capacity")) and cnt >= ev["capacity"]
+    return ev
+
+@api.get("/events")
+async def list_events():
+    out = []
+    async for ev in db.events.find({"status": "published"}, {"_id": 0}).sort("created_at", -1):
+        out.append(await event_public(ev))
+    return out
+
+@api.get("/events/{event_id}")
+async def get_event(event_id: str):
+    ev = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not ev or ev.get("status") != "published":
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    return await event_public(ev)
+
+@api.post("/events/{event_id}/register")
+async def register_event(event_id: str, body: EventRegisterIn, request: Request):
+    user = await get_optional_user(request)
+    ev = await db.events.find_one({"id": event_id}, {"_id": 0})
+    if not ev or ev.get("status") != "published":
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    email = body.email.lower()
+    if ev.get("capacity"):
+        cnt = await db.event_registrations.count_documents({"event_id": event_id, "status": {"$in": ["anotada", "pagada"]}})
+        if cnt >= ev["capacity"]:
+            raise HTTPException(status_code=409, detail="No quedan cupos para este evento")
+    existing = await db.event_registrations.find_one({"event_id": event_id, "email": email, "status": {"$in": ["anotada", "pagada"]}})
+    if existing:
+        raise HTTPException(status_code=400, detail="Ya estás anotada en este evento con ese email")
+    reg_id = f"reg_{uuid.uuid4().hex[:12]}"
+    reg = {"id": reg_id, "event_id": event_id, "event_title": ev["title"], "event_date": ev.get("date", ""),
+           "user_id": user["id"] if user else None, "name": body.name, "email": email,
+           "order_id": None, "status": "anotada", "created_at": iso(now_utc())}
+
+    if ev.get("price") is None:
+        await db.event_registrations.insert_one(dict(reg))
+        return {"registered": True, "paid": False}
+
+    # Paid ticket — same payment mechanism as pieces
+    order_id = f"order_{uuid.uuid4().hex[:14]}"
+    order = {"id": order_id, "status": "created", "kind": "event", "currency": CURRENCY,
+             "items": [{"event_id": event_id, "name": f"Entrada · {ev['title']}", "price": float(ev["price"])}],
+             "total": float(ev["price"]), "user_id": user["id"] if user else None,
+             "guest_email": email, "guest_name": body.name, "created_at": iso(now_utc()), "payment": {}}
+    await db.orders.insert_one(dict(order))
+    reg["status"] = "pendiente"
+    reg["order_id"] = order_id
+    await db.event_registrations.insert_one(dict(reg))
+
+    if not bool(MP_ACCESS_TOKEN):
+        return {"registered": True, "paid": True, "demo": True, "order_id": order_id, "total": float(ev["price"])}
+    try:
+        pref = requests.post("https://api.mercadopago.com/checkout/preferences",
+            headers={"Authorization": f"Bearer {MP_ACCESS_TOKEN}", "Content-Type": "application/json"},
+            json={"items": [{"title": f"Entrada · {ev['title']}", "quantity": 1, "unit_price": float(ev["price"]), "currency_id": CURRENCY}],
+                  "external_reference": order_id,
+                  "notification_url": f"{APP_BASE_URL}/api/payments/webhook",
+                  "back_urls": {"success": f"{APP_BASE_URL}/payment-result?order_id={order_id}",
+                                "pending": f"{APP_BASE_URL}/payment-result?order_id={order_id}",
+                                "failure": f"{APP_BASE_URL}/payment-result?order_id={order_id}"},
+                  "auto_return": "approved"}, timeout=20).json()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Error al conectar con Mercado Pago")
+    await db.orders.update_one({"id": order_id}, {"$set": {"payment.preference_id": pref.get("id")}})
+    return {"registered": True, "paid": True, "demo": False, "order_id": order_id,
+            "checkout_url": pref.get("init_point"), "total": float(ev["price"])}
+
+@api.get("/my/events")
+async def my_events(user=Depends(require_user)):
+    out = []
+    async for r in db.event_registrations.find({"$or": [{"user_id": user["id"]}, {"email": user["email"]}]}, {"_id": 0}).sort("created_at", -1):
+        out.append(r)
+    return out
+
+@api.get("/admin/events")
+async def admin_list_events(admin=Depends(require_admin)):
+    out = []
+    async for ev in db.events.find({}, {"_id": 0}).sort("created_at", -1):
+        out.append(await event_public(ev))
+    return out
+
+@api.post("/admin/events")
+async def admin_create_event(body: EventIn, admin=Depends(require_admin)):
+    eid = f"event_{uuid.uuid4().hex[:12]}"
+    doc = body.model_dump()
+    doc["id"] = eid
+    doc["created_at"] = iso(now_utc())
+    await db.events.insert_one(doc)
+    return clean(await db.events.find_one({"id": eid}))
+
+@api.put("/admin/events/{event_id}")
+async def admin_update_event(event_id: str, body: EventIn, admin=Depends(require_admin)):
+    r = await db.events.update_one({"id": event_id}, {"$set": body.model_dump()})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Evento no encontrado")
+    return clean(await db.events.find_one({"id": event_id}))
+
+@api.delete("/admin/events/{event_id}")
+async def admin_delete_event(event_id: str, admin=Depends(require_admin)):
+    paid = await db.event_registrations.count_documents({"event_id": event_id, "status": "pagada"})
+    if paid:
+        raise HTTPException(status_code=400, detail="No se puede eliminar: hay entradas pagadas. Despublicá el evento en su lugar.")
+    await db.event_registrations.delete_many({"event_id": event_id})
+    await db.events.delete_one({"id": event_id})
+    return {"ok": True}
+
+@api.get("/admin/events/{event_id}/registrations")
+async def admin_event_registrations(event_id: str, admin=Depends(require_admin)):
+    out = []
+    async for r in db.event_registrations.find({"event_id": event_id}, {"_id": 0}).sort("created_at", -1):
+        out.append(r)
+    return out
 
 # ---------------------------------------------------------------------------
 # Settings & content (public read)
@@ -752,6 +892,7 @@ async def startup():
     elif not verify_password(admin_password, existing.get("password_hash") or ""):
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password), "role": "admin"}})
     await seed_demo()
+    await seed_events()
     try:
         init_storage()
         logger.info("Storage initialized")
@@ -833,6 +974,27 @@ async def seed_demo():
                         "reserved_until": None, "history": [{"at": iso(now_utc()), "action": "creada"}],
                         "created_at": iso(now_utc())})
     logger.info("Demo data seeded")
+
+
+async def seed_events():
+    if await db.events.count_documents({}) > 0:
+        return
+    base = APP_BASE_URL
+    evs = [
+        {"title": "Liberación I — Desfile de apertura", "type": "desfile",
+         "description": "Presentación en vivo de la primera liberación del archivo. Cupos limitados, con entrada.",
+         "date": "A confirmar", "location": "Buenos Aires (a confirmar)", "image": f"{base}/brand/img3.jpeg",
+         "price": 18000.0, "capacity": 40, "status": "published"},
+        {"title": "Visita al laboratorio — Expediente abierto", "type": "presentacion",
+         "description": "Recorrido por el proceso detrás de las piezas: intervenciones, materiales y archivo. Entrada libre con inscripción previa.",
+         "date": "A confirmar", "location": "Buenos Aires (a confirmar)", "image": f"{base}/brand/img2.jpeg",
+         "price": None, "capacity": 25, "status": "published"},
+    ]
+    for e in evs:
+        e["id"] = f"event_{uuid.uuid4().hex[:12]}"
+        e["created_at"] = iso(now_utc())
+        await db.events.insert_one(dict(e))
+    logger.info("Demo events seeded")
 
 @app.on_event("shutdown")
 async def shutdown():

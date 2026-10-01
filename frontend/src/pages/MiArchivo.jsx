@@ -9,9 +9,13 @@ import { Input } from "@/components/ui/input";
 export default function MiArchivo() {
   const { user, logout } = useAuth();
   const [orders, setOrders] = useState([]);
+  const [myEvents, setMyEvents] = useState([]);
   const [claimId, setClaimId] = useState("");
 
-  const load = () => api.get("/my/orders").then((r) => setOrders(r.data)).catch(() => {});
+  const load = () => {
+    api.get("/my/orders").then((r) => setOrders(r.data)).catch(() => {});
+    api.get("/my/events").then((r) => setMyEvents(r.data)).catch(() => {});
+  };
   useEffect(() => { load(); }, []);
 
   const claim = async () => {
@@ -87,6 +91,28 @@ export default function MiArchivo() {
                 </div>
                 <span className={`dossier-label px-3 py-1 ${o.status === "paid" ? "bg-[#1C241D] text-[#72B078]" : o.status === "created" ? "bg-[#2A2A2A] text-[#A39B8E]" : "bg-[#2A1515] text-[#c74446]"}`}>
                   {o.status === "paid" ? "pagado" : o.status === "created" ? "pendiente" : o.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* My events */}
+      <section className="mb-14">
+        <h2 className="font-display font-bold uppercase tracking-tight text-2xl text-[#F5F4F0] mb-5">Mis eventos</h2>
+        {myEvents.length === 0 ? (
+          <p className="text-[#8C857B]">No estás anotada en ningún evento. <Link to="/eventos" className="text-[#E6E2DD] hover:underline">Ver agenda</Link>.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {myEvents.map((r) => (
+              <div key={r.id} data-testid={`my-event-${r.id}`} className="museum-frame p-5 flex items-center justify-between">
+                <div>
+                  <div className="font-display font-bold uppercase tracking-tight text-[#F5F4F0]">{r.event_title}</div>
+                  <div className="dossier-label text-[#6E675E] mt-1">{r.event_date || "fecha a confirmar"}</div>
+                </div>
+                <span className={`dossier-label px-3 py-1 ${r.status === "pagada" ? "bg-[#1C241D] text-[#72B078]" : r.status === "anotada" ? "bg-[#2A2A2A] text-[#A39B8E]" : "bg-[#2A2415] text-[#b9942f]"}`}>
+                  {r.status === "pagada" ? "entrada pagada" : r.status === "anotada" ? "anotada" : "pago pendiente"}
                 </span>
               </div>
             ))}

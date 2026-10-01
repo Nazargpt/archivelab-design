@@ -7,6 +7,7 @@ import Home from "@/pages/Home";
 import Archive from "@/pages/Archive";
 import Expediente from "@/pages/Expediente";
 import VIP from "@/pages/VIP";
+import Events from "@/pages/Events";
 import Cart from "@/pages/Cart";
 import Checkout from "@/pages/Checkout";
 import DemoCheckout from "@/pages/DemoCheckout";
@@ -31,6 +32,7 @@ function AppRouter() {
       <Route path="/archivo" element={<Layout><Archive /></Layout>} />
       <Route path="/pieza-expediente/:id" element={<Layout><Expediente /></Layout>} />
       <Route path="/camila-guerra" element={<Layout><VIP /></Layout>} />
+      <Route path="/eventos" element={<Layout><Events /></Layout>} />
       <Route path="/carrito" element={<Layout><Cart /></Layout>} />
       <Route path="/checkout" element={<Layout><Checkout /></Layout>} />
       <Route path="/checkout/demo/:orderId" element={<Layout><DemoCheckout /></Layout>} />

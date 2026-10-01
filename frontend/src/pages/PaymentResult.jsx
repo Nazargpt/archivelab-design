@@ -38,23 +38,39 @@ export default function PaymentResult() {
         {paid ? (
           <>
             <CheckCircle2 className="mx-auto text-[#72B078] mb-5" size={40} />
-            <h1 className="font-display font-extrabold uppercase tracking-tight text-3xl text-[#F5F4F0]">Pieza en tu archivo</h1>
-            <p className="text-[#A39B8E] mt-3">Tu pago fue confirmado. Estas piezas ahora forman parte de tu archivo personal.</p>
-            <div className="mt-8 text-left border-t border-[#2A2A2A] pt-6">
-              <div className="dossier-label text-[#6E675E] mb-4">Códigos únicos de tus piezas</div>
-              {order.items?.map((i) => (
-                <div key={i.unit_id} className="flex items-center justify-between py-3 border-b border-[#161616]">
-                  <div>
-                    <div className="text-[#F5F4F0] font-display font-bold uppercase tracking-tight">{i.name}</div>
-                    <div className="dossier-label text-[#8C857B] mt-1">{i.unit_code} · talle {i.size} · ej. {i.edition_number}</div>
-                  </div>
-                  <Link to={`/pieza/${i.unit_code}`} className="dossier-label text-[#8C857B] hover:text-[#F5F4F0]">ver ficha</Link>
+            {order.kind === "event" ? (
+              <>
+                <h1 className="font-display font-extrabold uppercase tracking-tight text-3xl text-[#F5F4F0]">Entrada confirmada</h1>
+                <p className="text-[#A39B8E] mt-3">Tu lugar está reservado. Te esperamos.</p>
+                <div className="mt-8 text-left border-t border-[#2A2A2A] pt-6">
+                  {order.items?.map((i, idx) => (
+                    <div key={idx} className="flex items-center justify-between py-3 border-b border-[#161616]">
+                      <div className="text-[#F5F4F0] font-display font-bold uppercase tracking-tight">{i.name}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            ) : (
+              <>
+                <h1 className="font-display font-extrabold uppercase tracking-tight text-3xl text-[#F5F4F0]">Pieza en tu archivo</h1>
+                <p className="text-[#A39B8E] mt-3">Tu pago fue confirmado. Estas piezas ahora forman parte de tu archivo personal.</p>
+                <div className="mt-8 text-left border-t border-[#2A2A2A] pt-6">
+                  <div className="dossier-label text-[#6E675E] mb-4">Códigos únicos de tus piezas</div>
+                  {order.items?.map((i) => (
+                    <div key={i.unit_id} className="flex items-center justify-between py-3 border-b border-[#161616]">
+                      <div>
+                        <div className="text-[#F5F4F0] font-display font-bold uppercase tracking-tight">{i.name}</div>
+                        <div className="dossier-label text-[#8C857B] mt-1">{i.unit_code} · talle {i.size} · ej. {i.edition_number}</div>
+                      </div>
+                      <Link to={`/pieza/${i.unit_code}`} className="dossier-label text-[#8C857B] hover:text-[#F5F4F0]">ver ficha</Link>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
             <div className="flex gap-3 justify-center mt-8">
               <Link to="/mi-archivo" data-testid="goto-archive" className="btn-ink px-7 py-3 dossier-label">Ir a Mi Archivo</Link>
-              <Link to="/archivo" className="btn-outline-ink px-7 py-3 dossier-label">Seguir explorando</Link>
+              <Link to={order.kind === "event" ? "/eventos" : "/archivo"} className="btn-outline-ink px-7 py-3 dossier-label">Seguir explorando</Link>
             </div>
           </>
         ) : (

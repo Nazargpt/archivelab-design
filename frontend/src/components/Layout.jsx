@@ -8,6 +8,7 @@ import { CATEGORIES } from "@/lib/api";
 
 const NAV = [
   { to: "/archivo", label: "Archivo" },
+  { to: "/eventos", label: "Eventos" },
   { to: "/camila-guerra", label: "Camila Guerra" },
   { to: "/mi-archivo", label: "Mi Archivo" },
 ];
