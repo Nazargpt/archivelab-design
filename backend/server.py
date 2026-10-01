@@ -108,6 +108,9 @@ def now_utc():
 def iso(dt):
     return dt.isoformat()
 
+def formatARS_py(n) -> str:
+    return "$ " + f"{int(round(n or 0)):,}".replace(",", ".")
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
@@ -638,11 +641,55 @@ async def mark_order_paid(order_id: str, payment_info: dict):
     await db.orders.update_one({"id": order_id}, {"$set": {"status": "paid", "payment": payment_info, "paid_at": iso(now_utc())}})
     if order.get("kind") == "event":
         await db.event_registrations.update_many({"order_id": order_id}, {"$set": {"status": "pagada"}})
+        await send_order_email(order, kind="event")
         return
     for li in order.get("items", []):
         await db.units.update_one({"id": li["unit_id"]}, {"$set": {
             "status": "vendida", "reserved_until": None, "order_id": order_id},
             "$push": {"history": {"at": iso(now_utc()), "action": "vendida", "order_id": order_id}}})
+    await send_order_email(order, kind="pieces")
+
+
+async def send_order_email(order: dict, kind: str):
+    to = order.get("guest_email")
+    if not to:
+        return
+    name = order.get("guest_name") or ""
+    total = formatARS_py(order.get("total", 0))
+    if kind == "event":
+        items = "".join(
+            f'<tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#111;font-size:14px">{escape(i.get("name",""))}</td></tr>'
+            for i in order.get("items", []))
+        html = _email_shell("Tu entrada está confirmada",
+            [f"Hola {escape(name)}," if name else "Hola,",
+             "Tu pago fue confirmado desde el servidor. Guardá este correo como comprobante.",
+             f'<table style="width:100%;border-collapse:collapse">{items}</table>',
+             f"Total: {escape(total)}",
+             "Podés ver tus inscripciones en Mi Archivo."],
+            "Ver Mis Eventos", f"{APP_BASE_URL}/mi-archivo")
+        await send_email(to=to, subject="Tu entrada está confirmada · ARCHIVE LAB", html=html)
+        return
+    rows = ""
+    for i in order.get("items", []):
+        code = str(i.get("unit_code", ""))
+        pdf_url = f"{APP_BASE_URL}/api/certificate/{code}/pdf"
+        rows += (f'<tr><td style="padding:10px 0;border-bottom:1px solid #eee">'
+                 f'<div style="color:#111;font-size:15px;font-weight:bold">{escape(i.get("name",""))}</div>'
+                 f'<div style="color:#666;font-size:12px;margin-top:3px">Talle {escape(str(i.get("size","")))}'
+                 f' · ejemplar Nº {escape(str(i.get("edition_number","")))}</div>'
+                 f'<div style="color:#111;font-size:13px;font-family:monospace;margin-top:4px;letter-spacing:.05em">'
+                 f'Código único: {escape(code)}</div>'
+                 f'<a href="{escape(pdf_url)}" style="display:inline-block;margin-top:6px;color:#111;'
+                 f'font-size:12px;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid #111;'
+                 f'text-decoration:none">Descargar certificado (PDF)</a></td></tr>')
+    html = _email_shell("Tu pieza entró al archivo",
+        [f"Hola {escape(name)}," if name else "Hola,",
+         "Tu pago fue confirmado. Estas piezas ahora forman parte de tu archivo personal, cada una con su código único permanente:",
+         f'<table style="width:100%;border-collapse:collapse">{rows}</table>',
+         f"Total: {escape(total)}",
+         "En Mi Archivo vas a encontrar la ficha digital y el certificado descargable de cada pieza."],
+        "Ver Mi Archivo", f"{APP_BASE_URL}/mi-archivo")
+    await send_email(to=to, subject="Tu pieza entró al archivo · ARCHIVE LAB", html=html)
 
 @api.post("/demo/approve/{order_id}")
 async def demo_approve(order_id: str):
