@@ -1310,9 +1310,12 @@ async def admin_product_waitlist(product_id: str, admin=Depends(require_admin)):
         out.append(w)
     return out
 
-async def _notify_waitlist(kind: str, ref_id: str, title: str, message: str, cta_url: str):
+async def _notify_waitlist(kind: str, ref_id: str, title: str, message: str, cta_url: str, only_unnotified: bool = False):
     sent = 0
-    async for w in db.waitlist.find({"kind": kind, "ref_id": ref_id}):
+    query = {"kind": kind, "ref_id": ref_id}
+    if only_unnotified:
+        query["notified"] = {"$ne": True}
+    async for w in db.waitlist.find(query):
         html = _email_shell(f"Novedades · {title}",
             [f"Hola {escape(w.get('name',''))},", escape(message),
              "Te avisamos porque te anotaste en la lista de espera del archivo."],
@@ -1339,7 +1342,7 @@ async def admin_notify_product(product_id: str, admin=Depends(require_admin)):
         raise HTTPException(status_code=404, detail="Pieza no encontrada")
     sent = await _notify_waitlist("product", product_id, p["name"],
         f"Volvió al archivo: {p['name']}. Hay unidades disponibles de nuevo.",
-        f"{APP_BASE_URL}/pieza-expediente/{product_id}")
+        f"{APP_BASE_URL}/pieza-expediente/{product_id}", only_unnotified=True)
     return {"sent": sent}
 
 @api.get("/certificate/{unit_code}/pdf")

@@ -226,8 +226,9 @@ function ProductWaitlist({ productId }) {
   const [wl, setWl] = useState([]);
   const load = () => api.get(`/admin/products/${productId}/waitlist`).then((r) => setWl(r.data)).catch(() => {});
   useEffect(() => { load(); }, [productId]);
+  const pending = wl.filter((w) => !w.notified).length;
   const notify = async () => {
-    if (!window.confirm("¿Avisar por email a toda la lista que la pieza volvió?")) return;
+    if (!window.confirm(`¿Avisar por email a ${pending} persona(s) que todavía no contactaste que la pieza volvió?`)) return;
     try { const { data } = await api.post(`/admin/products/${productId}/notify`); toast.success(`Emails enviados: ${data.sent}`); load(); }
     catch (e) { toast.error(errMsg(e)); }
   };
@@ -235,7 +236,9 @@ function ProductWaitlist({ productId }) {
     <div className="border-t border-[#1C1C1C] pt-5">
       <div className="flex items-center justify-between mb-3">
         <Label className={lbl}>Lista de espera · "avisame si vuelve"</Label>
-        {wl.length > 0 && <button data-testid="notify-product" onClick={notify} className="dossier-label text-[#E6E2DD] hover:text-white">Avisar que volvió</button>}
+        {pending > 0
+          ? <button data-testid="notify-product" onClick={notify} className="dossier-label text-[#E6E2DD] hover:text-white">Avisar que volvió ({pending})</button>
+          : wl.length > 0 && <span className="dossier-label text-[#72B078]">todas avisadas</span>}
       </div>
       {wl.length === 0 ? <p className="text-xs text-[#6E675E]">Nadie anotado todavía.</p> : (
         <div className="max-h-40 overflow-y-auto no-scrollbar space-y-1.5">
