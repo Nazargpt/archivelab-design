@@ -356,6 +356,7 @@ class SettingsIn(BaseModel):
     free_threshold: Optional[float] = None
     origin_postal_code: str = ""
     default_weight_kg: float = 1.0
+    low_stock_threshold: int = 5
     contact_email: str = ""
     contact_whatsapp: str = ""
     instagram: str = ""
@@ -784,6 +785,8 @@ async def mark_order_paid(order_id: str, payment_info: dict):
             "$push": {"history": {"at": iso(now_utc()), "action": "vendida", "order_id": order_id}}})
     await send_order_email(order, kind="pieces")
     await send_seller_email(order, kind="pieces")
+    for pid in {li["product_id"] for li in order.get("items", []) if li.get("product_id")}:
+        await check_low_stock(pid)
 
 
 async def send_order_email(order: dict, kind: str):
@@ -944,6 +947,42 @@ async def send_daily_summary_email():
     ]
     html = _seller_shell("Tu resumen diario", lines, "Ver el panel", f"{APP_BASE_URL}/admin")
     await send_email(to=SELLER_EMAIL, subject=f"📊 Resumen ARCHIVE LAB · {d['date']}", html=html)
+
+
+async def send_low_stock_email(product: dict, total: int, per_size: dict, threshold: int):
+    if not SELLER_EMAIL:
+        return
+    sizes = ", ".join(f"{escape(str(k))}: {v}" for k, v in sorted(per_size.items())) or "—"
+    lines = [
+        f"La pieza <b>{escape(product.get('name',''))}</b> está por agotarse.",
+        (f'<table style="width:100%;border-collapse:collapse;margin:4px 0">'
+         f'<tr><td style="padding:6px 0;color:#111;font-size:15px">Ejemplares disponibles</td>'
+         f'<td style="padding:6px 0;text-align:right;font-weight:bold;color:#111">{total}</td></tr>'
+         f'<tr><td style="padding:6px 0;color:#111;font-size:15px">Por talle</td>'
+         f'<td style="padding:6px 0;text-align:right;color:#111">{sizes}</td></tr>'
+         f'<tr><td style="padding:6px 0;color:#111;font-size:15px">Código de diseño</td>'
+         f'<td style="padding:6px 0;text-align:right;font-family:monospace;color:#111">{escape(str(product.get("design_code","")))}</td></tr>'
+         f'</table>'),
+        f"Quedan {total} o menos (umbral configurado: {threshold}). Reponé ejemplares o liberá la edición antes de que se agote.",
+    ]
+    html = _seller_shell("Stock bajo", lines, "Gestionar la pieza", f"{APP_BASE_URL}/admin")
+    await send_email(to=SELLER_EMAIL, subject=f"⚠️ Stock bajo · {product.get('name','')} ({total}) · ARCHIVE LAB", html=html)
+
+
+async def check_low_stock(product_id: str):
+    """Avisa (una vez) cuando una pieza baja al umbral; se rearma al reponer stock."""
+    p = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not p:
+        return
+    s = await db.settings.find_one({"id": "main"}, {"_id": 0}) or {}
+    threshold = int(s.get("low_stock_threshold", 5) or 5)
+    per_size, total = await availability_summary(product_id)
+    already = bool(p.get("low_stock_notified"))
+    if total > threshold and already:
+        await db.products.update_one({"id": product_id}, {"$set": {"low_stock_notified": False}})
+    elif 0 < total <= threshold and not already:
+        await db.products.update_one({"id": product_id}, {"$set": {"low_stock_notified": True}})
+        await send_low_stock_email(p, total, per_size, threshold)
 
 
 async def send_shipment_email(order: dict):
@@ -1409,6 +1448,7 @@ async def admin_generate_units(product_id: str, body: UnitsGenerateIn, admin=Dep
                "created_at": iso(now_utc())}
         await db.units.insert_one(dict(doc))
         created.append(clean(doc))
+    await check_low_stock(product_id)
     return created
 
 @api.put("/admin/units/{unit_id}")
@@ -1424,6 +1464,7 @@ async def admin_update_unit(unit_id: str, body: UnitUpdateIn, admin=Depends(requ
         upd["reserved_until"] = None
     await db.units.update_one({"id": unit_id}, {"$set": upd,
         "$push": {"history": {"at": iso(now_utc()), "action": f"estado:{body.status}", "note": body.note}}})
+    await check_low_stock(u["product_id"])
     return clean(await db.units.find_one({"id": unit_id}))
 
 @api.get("/admin/units/{unit_id}/qr")

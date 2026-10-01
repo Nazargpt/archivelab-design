@@ -489,9 +489,9 @@ function ContenidoTab() {
 }
 
 function AjustesTab() {
-  const [s, setS] = useState({ currency: "ARS", pickup_enabled: true, contact_email: "", contact_whatsapp: "", instagram: "", pinterest: "", address: "", shipping_zones: [] });
-  useEffect(() => { api.get("/settings").then((r) => setS((p) => ({ ...p, ...r.data }))).catch(() => {}); }, []);
-  const save = async () => { try { await api.put("/admin/settings", s); toast.success("Ajustes guardados"); } catch (e) { toast.error(errMsg(e)); } };
+  const [s, setS] = useState({ currency: "ARS", pickup_enabled: true, contact_email: "", contact_whatsapp: "", instagram: "", pinterest: "", address: "", shipping_zones: [], low_stock_threshold: 5 });
+  useEffect(() => { api.get("/settings").then((r) => setS((p) => ({ ...p, ...r.data, low_stock_threshold: r.data.low_stock_threshold ?? 5 }))).catch(() => {}); }, []);
+  const save = async () => { try { await api.put("/admin/settings", { ...s, low_stock_threshold: Number(s.low_stock_threshold || 5) }); toast.success("Ajustes guardados"); } catch (e) { toast.error(errMsg(e)); } };
   return (
     <div className="max-w-lg space-y-4">
       <div><Label className={lbl}>Email de contacto</Label><Input data-testid="set-email" className={field} value={s.contact_email} onChange={(e) => setS({ ...s, contact_email: e.target.value })} /></div>
@@ -499,6 +499,7 @@ function AjustesTab() {
       <div><Label className={lbl}>Instagram (sin @)</Label><Input className={field} value={s.instagram} onChange={(e) => setS({ ...s, instagram: e.target.value })} /></div>
       <div><Label className={lbl}>Pinterest</Label><Input className={field} value={s.pinterest} onChange={(e) => setS({ ...s, pinterest: e.target.value })} /></div>
       <div><Label className={lbl}>Dirección</Label><Input className={field} value={s.address} onChange={(e) => setS({ ...s, address: e.target.value })} /></div>
+      <div><Label className={lbl}>Alerta de stock bajo (avisar cuando queden ≤ ejemplares)</Label><Input data-testid="set-low-stock" type="number" min="1" className={field} value={s.low_stock_threshold ?? 5} onChange={(e) => setS({ ...s, low_stock_threshold: e.target.value })} /></div>
       <button data-testid="save-settings" onClick={save} className="btn-ink px-6 py-3 dossier-label">Guardar ajustes</button>
     </div>
   );
