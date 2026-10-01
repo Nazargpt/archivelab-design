@@ -1,0 +1,25 @@
+{
+  "summary": "Frontend regression check after non-behavioral code-quality edits (AuthContext logout console.error, PaymentResult poll console.error, ProductEditor images key={img}, backend tests env defaults). All four requested flows pass end-to-end against the preview URL. 1) Customer login with cliente@test.com/Cliente123! stores archive_token, /mi-archivo is accessible with 'MIEMBRO DEL ARCHIVO · MI ARCHIVO' heading and a visible [data-testid='logout-button'] that clears localStorage on click (no console error from the new logout catch). 2) Admin login with camila@archivelab.design/Archive2026! grants access to /admin (Panel tab visible). 3) In Admin Piezas, 11 admin-product-* cards render; opening the first published product (prod_a5c9f18d87cd / VST01 'Vestido Avant (consulta)') mounts [data-testid='product-editor'] with 2 <img> thumbnails whose src are valid URLs — the new key={img} did not break the images map; [data-testid='generate-units'] (Unidades) is present. 4) Logged-in customer flow: /archivo → filter 'libre' → open /pieza-expediente/prod_8a7a5b056aab → size-Único → add-to-cart-button → /checkout → fill name+email → shipping-retiro → pay-button navigates to /checkout/demo/order_f6652141ebbe4e → 'SIMULAR PAGO APROBADO' button hits /api/demo/approve/{order_id} and redirects to /payment-result?order_id=…; the page renders 'PIEZA EN TU ARCHIVO', the unique code 'AL-CAR02-002-62BC · Talle Único · ej. 2', and [data-testid='goto-archive']. PaymentResult polling + render survive the console.error change.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AuthContext.logout: localStorage.removeItem + setUser(false) still runs after a failed /auth/logout call (good) — fine as-is after the console.error addition.",
+    "PaymentResult poll: setTimeout is cleared via the `active` flag but on error path there's still a hardcoded 2.5s cadence; no backoff. Low priority — polling ends as soon as the order flips to paid.",
+    "ProductEditor images key={img}: works because preview URLs are unique per upload. If a product ever had duplicate image URLs in the array, React would complain about duplicate keys. Consider key={`${i}-${img}`} for defensive coding.",
+    "Login button in /ingresar is a plain <button> without type='submit' and without a data-testid (observed only 'INGRESAR' text). Minor testability gap — add data-testid='login-submit' and type='submit' to make Enter-to-submit and automation easier."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (4/4 regression flows)"},
+  "test_credentials": "Admin camila@archivelab.design / Archive2026! · Customer cliente@test.com / Cliente123! · Mercado Pago DEMO (SIMULAR PAGO APROBADO button or POST /api/demo/approve/{order_id})",
+  "seed_data_creation": "Consumed 1 'libre' unit of CARTERA EXPEDIENTE NOCHE (prod_8a7a5b056aab) via a real paid demo order_f6652141ebbe4e, generating unit AL-CAR02-002-62BC on the customer archive. Not cleaned up.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Login route is /ingresar (NOT /login). INGRESAR button has no data-testid and no type='submit' — use button:has-text('INGRESAR'). Product routes are /pieza-expediente/{id}. Add-to-cart testid is 'add-to-cart-button'. Checkout exposes checkout-name, checkout-email, checkout-province, checkout-postal, checkout-address, shipping-envio, shipping-retiro, pay-button. After pay-button, UI lands at /checkout/demo/order_<alnum>; click 'SIMULAR PAGO APROBADO' or POST /api/demo/approve/{order_id} then navigate to /payment-result?order_id=…. Paid heading is rendered with CSS text-transform:uppercase so match 'PIEZA EN TU ARCHIVO' / 'AL-' / data-testid='goto-archive' rather than lowercase 'Pieza en tu archivo'. The 4 regression touchpoints are green.",
+  "rca of the issue": "N/A — no regressions detected from the code-quality edits."
+}
