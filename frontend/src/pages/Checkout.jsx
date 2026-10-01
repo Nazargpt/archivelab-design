@@ -19,16 +19,19 @@ export default function Checkout() {
   const [shipping, setShipping] = useState("envio");
   const [address, setAddress] = useState("");
   const [province, setProvince] = useState("");
+  const [postalCode, setPostalCode] = useState("");
   const [shipCost, setShipCost] = useState(0);
+  const [shipLabel, setShipLabel] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (shipping === "retiro") { setShipCost(0); return; }
-    api.post("/shipping/quote", { province, subtotal: total }).then((r) => {
+    if (shipping === "retiro") { setShipCost(0); setShipLabel(""); return; }
+    api.post("/shipping/quote", { province, postal_code: postalCode, subtotal: total }).then((r) => {
       const envio = (r.data.options || []).find((o) => o.method === "envio");
       setShipCost(envio ? envio.cost : 0);
-    }).catch(() => setShipCost(0));
-  }, [shipping, province, total]);
+      setShipLabel(envio ? envio.label : "");
+    }).catch(() => { setShipCost(0); setShipLabel(""); });
+  }, [shipping, province, postalCode, total]);
 
   const grand = total + (shipping === "retiro" ? 0 : shipCost);
 
@@ -44,7 +47,8 @@ export default function Checkout() {
         items: items.map((i) => ({ product_id: i.product_id, size: i.size })),
         guest_email: email, guest_name: name,
         shipping_method: shipping, shipping_address: address,
-        shipping_province: province, shipping_cost: shipping === "retiro" ? 0 : shipCost,
+        shipping_province: province, shipping_postal_code: postalCode,
+        shipping_cost: shipping === "retiro" ? 0 : shipCost,
       });
       if (data.demo) {
         navigate(`/checkout/demo/${data.order_id}`);
@@ -95,8 +99,12 @@ export default function Checkout() {
                 </select>
               </div>
               <div>
+                <Label className="dossier-label text-[#6E675E]">Código postal</Label>
+                <Input data-testid="checkout-postal" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} className="mt-2 bg-[#121212] border-[#2A2A2A] text-[#F5F4F0]" placeholder="Ej: 1425" />
+              </div>
+              <div>
                 <Label className="dossier-label text-[#6E675E]">Dirección</Label>
-                <Textarea data-testid="checkout-address" value={address} onChange={(e) => setAddress(e.target.value)} className="mt-2 bg-[#121212] border-[#2A2A2A] text-[#F5F4F0]" placeholder="Calle, número, localidad, CP" />
+                <Textarea data-testid="checkout-address" value={address} onChange={(e) => setAddress(e.target.value)} className="mt-2 bg-[#121212] border-[#2A2A2A] text-[#F5F4F0]" placeholder="Calle, número, localidad" />
               </div>
             </>
           )}
@@ -119,6 +127,9 @@ export default function Checkout() {
             <span>Envío{shipping === "retiro" ? " (retiro)" : province ? ` · ${province}` : ""}</span>
             <span data-testid="checkout-shipping">{(shipping === "retiro" || shipCost === 0) ? "Gratis" : formatARS(shipCost)}</span>
           </div>
+          {shipping === "envio" && shipLabel && shipLabel.includes("en vivo") && (
+            <p className="text-[10px] text-[#72B078] mt-1 dossier-label" data-testid="checkout-live-quote">{shipLabel}</p>
+          )}
           <div className="flex justify-between text-[#F5F4F0] text-lg font-medium border-t border-[#2A2A2A] pt-3 mt-2">
             <span>Total</span><span data-testid="checkout-total">{formatARS(grand)}</span>
           </div>

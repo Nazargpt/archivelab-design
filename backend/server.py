@@ -11,6 +11,9 @@ import csv
 import io
 import base64
 import secrets
+import hmac
+import asyncio
+from zoneinfo import ZoneInfo
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
@@ -57,6 +60,8 @@ EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY")
 EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "ARCHIVE LAB")
 EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO")
 SELLER_EMAIL = os.environ.get("SELLER_EMAIL", "camila@archivelab.design")
+WEBHOOK_CRON_SECRET = os.environ.get("WEBHOOK_CRON_SECRET", "")
+AR_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("archivelab")
@@ -339,6 +344,7 @@ class CheckoutIn(BaseModel):
     shipping_method: str = "envio"
     shipping_address: str = ""
     shipping_province: str = ""
+    shipping_postal_code: str = ""
     shipping_cost: float = 0
     carrier: str = ""
 
@@ -348,6 +354,8 @@ class SettingsIn(BaseModel):
     pickup_enabled: bool = True
     flat_cost: float = 0
     free_threshold: Optional[float] = None
+    origin_postal_code: str = ""
+    default_weight_kg: float = 1.0
     contact_email: str = ""
     contact_whatsapp: str = ""
     instagram: str = ""
@@ -458,6 +466,82 @@ async def compute_shipping(province: str, subtotal: float) -> float:
         if province and province in (z.get("provinces") or []):
             return float(z.get("cost", 0) or 0)
     return float(s.get("flat_cost", 0) or 0)
+
+
+async def andreani_quote(cred: dict, origin_cp: str, dest_cp: str, weight_kg: float, declared: float) -> Optional[float]:
+    """Cotización en vivo Andreani. Login Basic -> token 24h, luego GET /v1/tarifas."""
+    usuario = cred.get("usuario"); clave = cred.get("clave")
+    cliente = cred.get("cliente"); contrato = cred.get("contrato")
+    if not all([usuario, clave, cliente, contrato, origin_cp, dest_cp]):
+        return None
+    base = "https://apis.andreani.com" if (cred.get("entorno") or "").lower().startswith("prod") else "https://apisqa.andreani.com"
+    try:
+        token_b64 = base64.b64encode(f"{usuario}:{clave}".encode()).decode()
+        async with httpx.AsyncClient(timeout=20) as hc:
+            lr = await hc.get(f"{base}/login", headers={"Authorization": f"Basic {token_b64}"})
+            lr.raise_for_status()
+            tok = lr.headers.get("x-authorization-token") or lr.json().get("token")
+            if not tok:
+                return None
+            params = {"cpDestino": str(dest_cp), "cpOrigen": str(origin_cp),
+                      "contrato": str(contrato), "cliente": str(cliente),
+                      "bultos[0][valorDeclarado]": str(int(declared or 0)),
+                      "bultos[0][kilos]": str(weight_kg or 1),
+                      "bultos[0][volumenCm]": "1000"}
+            qr = await hc.get(f"{base}/v1/tarifas", params=params,
+                              headers={"x-authorization-token": tok})
+            qr.raise_for_status()
+            data = qr.json()
+        tarifa = data.get("tarifaConIva", {}).get("total") or data.get("tarifaSinIva", {}).get("total") or data.get("total")
+        return float(tarifa) if tarifa is not None else None
+    except Exception as e:
+        logger.error(f"Andreani quote error: {e}")
+        return None
+
+
+async def oca_quote(cred: dict, origin_cp: str, dest_cp: str, weight_kg: float, declared: float) -> Optional[float]:
+    """Cotización en vivo OCA ePak -> Tarifar_Envio_Corporativo (XML)."""
+    cuit = cred.get("cuit"); operativa = cred.get("cuenta") or cred.get("operativa")
+    if not all([cuit, operativa, origin_cp, dest_cp]):
+        return None
+    url = "https://webservice.oca.com.ar/ePak_tracking/Oep_TrackEPak.asmx/Tarifar_Envio_Corporativo"
+    params = {"PesoTotal": str(weight_kg or 1), "VolumenTotal": "0.001",
+              "CodigoPostalOrigen": str(origin_cp), "CodigoPostalDestino": str(dest_cp),
+              "CantidadPaquetes": "1", "Cuit": str(cuit), "Operativa": str(operativa),
+              "ValorDeclarado": str(int(declared or 0))}
+    try:
+        async with httpx.AsyncClient(timeout=20) as hc:
+            r = await hc.get(url, params=params)
+            r.raise_for_status()
+            m = re.search(r"<Total>([\d.,]+)</Total>", r.text, re.I)
+            if not m:
+                return None
+            return float(m.group(1).replace(",", "."))
+    except Exception as e:
+        logger.error(f"OCA quote error: {e}")
+        return None
+
+
+async def quote_shipping(province: str, postal_code: str, subtotal: float) -> dict:
+    """Devuelve {cost, carrier, live}. Prueba cotización en vivo si hay un transportista
+    habilitado y configurado + CP origen + CP destino; si no, usa zonas/costo base."""
+    s = await db.settings.find_one({"id": "main"}, {"_id": 0}) or {}
+    ft = s.get("free_threshold")
+    if ft is not None and subtotal >= float(ft):
+        return {"cost": 0.0, "carrier": None, "live": False, "free": True}
+    origin_cp = (s.get("origin_postal_code") or "").strip()
+    weight = float(s.get("default_weight_kg") or 1.0)
+    dest_cp = (postal_code or "").strip()
+    if origin_cp and dest_cp:
+        carriers = await db.settings.find_one({"id": "carriers"}, {"_id": 0}) or {}
+        for name, fn in (("andreani", andreani_quote), ("oca", oca_quote)):
+            cfg = carriers.get(name) or {}
+            if cfg.get("enabled") and (cfg.get("credentials") or {}):
+                cost = await fn(cfg["credentials"], origin_cp, dest_cp, weight, subtotal)
+                if cost is not None:
+                    return {"cost": float(cost), "carrier": name, "live": True, "free": False}
+    cost = await compute_shipping(province, subtotal)
+    return {"cost": float(cost), "carrier": None, "live": False, "free": cost == 0}
 
 # ---------------------------------------------------------------------------
 # Auth routes
@@ -639,7 +723,13 @@ async def checkout(body: CheckoutIn, request: Request):
         raise
 
     subtotal = total
-    ship_cost = 0.0 if body.shipping_method == "retiro" else await compute_shipping(body.shipping_province, subtotal)
+    if body.shipping_method == "retiro":
+        ship_cost = 0.0
+        quote_carrier = None
+    else:
+        q = await quote_shipping(body.shipping_province, body.shipping_postal_code, subtotal)
+        ship_cost = q["cost"]
+        quote_carrier = q["carrier"]
     total = subtotal + ship_cost
     order_id = f"order_{uuid.uuid4().hex[:14]}"
     order = {"id": order_id, "status": "created", "kind": "pieces", "items": line_items,
@@ -648,7 +738,8 @@ async def checkout(body: CheckoutIn, request: Request):
              "guest_email": (body.guest_email.lower() if body.guest_email else (user["email"] if user else None)),
              "guest_name": body.guest_name or (user["name"] if user else None),
              "shipping_method": body.shipping_method, "shipping_address": body.shipping_address,
-             "shipping_province": body.shipping_province, "carrier": body.carrier,
+             "shipping_province": body.shipping_province, "shipping_postal_code": body.shipping_postal_code,
+             "carrier": (quote_carrier or body.carrier or ""),
              "shipping_status": "pendiente",
              "created_at": iso(now_utc()), "payment": {}}
     await db.orders.insert_one(dict(order))
@@ -797,6 +888,62 @@ async def send_seller_email(order: dict, kind: str):
     title = "Nueva venta de entradas" if kind == "event" else "Nueva venta de pieza"
     html = _seller_shell(title, lines, "Ver en el panel", f"{APP_BASE_URL}/admin")
     await send_email(to=SELLER_EMAIL, subject=f"🛒 Nuevo pedido {order_id} · ARCHIVE LAB", html=html)
+
+
+async def build_daily_summary(day_ar: datetime) -> dict:
+    """Agrega las ventas del día `day_ar` (fecha en hora Argentina)."""
+    start_ar = day_ar.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_ar = start_ar + timedelta(days=1)
+    start = start_ar.astimezone(timezone.utc)
+    end = end_ar.astimezone(timezone.utc)
+    s_iso, e_iso = iso(start), iso(end)
+    paid_orders = []
+    async for o in db.orders.find({"status": "paid", "paid_at": {"$gte": s_iso, "$lt": e_iso}}, {"_id": 0}):
+        paid_orders.append(o)
+    revenue = sum(float(o.get("total", 0) or 0) for o in paid_orders)
+    pieces = sum(len(o.get("items", [])) for o in paid_orders if o.get("kind") != "event")
+    tickets = sum(len(o.get("items", [])) for o in paid_orders if o.get("kind") == "event")
+    pending_ship = await db.orders.count_documents({"status": "paid", "kind": "pieces",
+                                                    "shipping_method": "envio", "shipping_status": "pendiente"})
+    new_waitlist = await db.waitlist.count_documents({"created_at": {"$gte": s_iso, "$lt": e_iso}})
+    return {"date": start_ar.strftime("%d/%m/%Y"), "orders": len(paid_orders), "revenue": revenue,
+            "pieces": pieces, "tickets": tickets, "pending_ship": pending_ship,
+            "new_waitlist": new_waitlist, "paid_orders": paid_orders}
+
+
+async def send_daily_summary_email():
+    if not SELLER_EMAIL:
+        return
+    yesterday = datetime.now(AR_TZ) - timedelta(days=1)
+    d = await build_daily_summary(yesterday)
+    rows = ""
+    for o in d["paid_orders"]:
+        names = ", ".join(escape(i.get("name", "")) for i in o.get("items", []))
+        rows += (f'<tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#111;font-size:13px">'
+                 f'<b>{escape(o.get("guest_name") or "—")}</b> · {names}'
+                 f'<span style="color:#666"> · {escape(formatARS_py(o.get("total",0)))}</span></td></tr>')
+    if not rows:
+        rows = '<tr><td style="padding:8px 0;color:#666;font-size:13px">Sin ventas registradas.</td></tr>'
+    lines = [
+        f"Resumen del <b>{escape(d['date'])}</b>:",
+        (f'<table style="width:100%;border-collapse:collapse;margin:4px 0">'
+         f'<tr><td style="padding:6px 0;color:#111;font-size:15px">Pedidos pagados</td>'
+         f'<td style="padding:6px 0;text-align:right;font-weight:bold;color:#111">{d["orders"]}</td></tr>'
+         f'<tr><td style="padding:6px 0;color:#111;font-size:15px">Ingresos</td>'
+         f'<td style="padding:6px 0;text-align:right;font-weight:bold;color:#111">{escape(formatARS_py(d["revenue"]))}</td></tr>'
+         f'<tr><td style="padding:6px 0;color:#111;font-size:15px">Piezas vendidas</td>'
+         f'<td style="padding:6px 0;text-align:right;font-weight:bold;color:#111">{d["pieces"]}</td></tr>'
+         f'<tr><td style="padding:6px 0;color:#111;font-size:15px">Entradas vendidas</td>'
+         f'<td style="padding:6px 0;text-align:right;font-weight:bold;color:#111">{d["tickets"]}</td></tr>'
+         f'<tr><td style="padding:6px 0;color:#111;font-size:15px">Nuevos en lista de espera</td>'
+         f'<td style="padding:6px 0;text-align:right;font-weight:bold;color:#111">{d["new_waitlist"]}</td></tr>'
+         f'</table>'),
+        f'<b>Envíos pendientes de despachar:</b> {d["pending_ship"]}',
+        '<b>Detalle de ventas:</b>',
+        f'<table style="width:100%;border-collapse:collapse">{rows}</table>',
+    ]
+    html = _seller_shell("Tu resumen diario", lines, "Ver el panel", f"{APP_BASE_URL}/admin")
+    await send_email(to=SELLER_EMAIL, subject=f"📊 Resumen ARCHIVE LAB · {d['date']}", html=html)
 
 
 async def send_shipment_email(order: dict):
@@ -1344,15 +1491,33 @@ async def shipping_quote(body: QuoteIn):
     s = await db.settings.find_one({"id": "main"}, {"_id": 0}) or {}
     carriers = await db.settings.find_one({"id": "carriers"}, {"_id": 0}) or {}
     enabled = [k for k in CARRIER_FIELDS if (carriers.get(k) or {}).get("enabled")]
-    cost = await compute_shipping(body.province, body.subtotal)
-    free = s.get("free_threshold") is not None and body.subtotal >= float(s["free_threshold"])
-    label = "Envío a domicilio"
-    if enabled:
-        label += " (" + ", ".join(c.capitalize() for c in enabled) + ")"
-    options = [{"method": "envio", "label": label, "cost": 0 if free else cost, "free": free}]
+    q = await quote_shipping(body.province, body.postal_code, body.subtotal)
+    if q.get("live") and q.get("carrier"):
+        label = f"Envío a domicilio · {q['carrier'].capitalize()} (cotización en vivo)"
+    else:
+        label = "Envío a domicilio"
+        if enabled:
+            label += " (" + ", ".join(c.capitalize() for c in enabled) + ")"
+    options = [{"method": "envio", "label": label, "cost": q["cost"], "free": q.get("free", False)}]
     if s.get("pickup_enabled", True):
         options.append({"method": "retiro", "label": "Retiro en persona (CABA)", "cost": 0, "free": True})
     return {"options": options}
+
+
+@api.post("/cron/daily-summary")
+async def cron_daily_summary(request: Request, authorization: str = Header(default="")):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    token = authorization[7:] if authorization.lower().startswith("bearer ") else ""
+    if not WEBHOOK_CRON_SECRET or not hmac.compare_digest(token, WEBHOOK_CRON_SECRET):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    run_id = request.headers.get("X-Webhook-Id") or ""
+    if run_id:
+        existing = await db.cron_runs.find_one({"run_id": run_id})
+        if existing:
+            return {"ok": True, "duplicate": True}
+        await db.cron_runs.insert_one({"run_id": run_id, "job": "daily-summary", "at": iso(now_utc())})
+    asyncio.create_task(send_daily_summary_email())
+    return {"ok": True}
 
 @api.get("/admin/carriers")
 async def admin_get_carriers(admin=Depends(require_admin)):

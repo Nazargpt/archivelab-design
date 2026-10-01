@@ -384,12 +384,12 @@ function EnviosTab() {
   const [carriers, setCarriers] = useState(null);
 
   useEffect(() => {
-    api.get("/settings").then((r) => setS({ flat_cost: 0, free_threshold: "", pickup_enabled: true, shipping_zones: [], ...r.data, free_threshold: r.data.free_threshold ?? "" })).catch(() => {});
+    api.get("/settings").then((r) => setS({ flat_cost: 0, free_threshold: "", pickup_enabled: true, shipping_zones: [], origin_postal_code: "", default_weight_kg: 1, ...r.data, free_threshold: r.data.free_threshold ?? "" })).catch(() => {});
     api.get("/admin/carriers").then((r) => setCarriers(r.data)).catch(() => {});
   }, []);
 
   const saveShipping = async () => {
-    const payload = { ...s, free_threshold: s.free_threshold === "" ? null : Number(s.free_threshold), flat_cost: Number(s.flat_cost || 0) };
+    const payload = { ...s, free_threshold: s.free_threshold === "" ? null : Number(s.free_threshold), flat_cost: Number(s.flat_cost || 0), default_weight_kg: Number(s.default_weight_kg || 1) };
     try { await api.put("/admin/settings", payload); toast.success("Envíos actualizados"); } catch (e) { toast.error(errMsg(e)); }
   };
   const saveCarriers = async () => {
@@ -410,6 +410,11 @@ function EnviosTab() {
           <div><Label className={lbl}>Envío gratis desde ARS (vacío = nunca)</Label><Input type="number" className={field} value={s.free_threshold} onChange={(e) => setS({ ...s, free_threshold: e.target.value })} /></div>
         </div>
         <label className="flex items-center gap-3"><input type="checkbox" checked={s.pickup_enabled} onChange={(e) => setS({ ...s, pickup_enabled: e.target.checked })} className="w-4 h-4 accent-[#E6E2DD]" /><span className="text-sm text-[#A39B8E]">Permitir retiro en persona (CABA)</span></label>
+        <div className="grid grid-cols-2 gap-4">
+          <div><Label className={lbl}>CP de origen (desde dónde despachás)</Label><Input data-testid="ship-origin-cp" className={field} value={s.origin_postal_code || ""} onChange={(e) => setS({ ...s, origin_postal_code: e.target.value })} placeholder="Ej: 1414" /></div>
+          <div><Label className={lbl}>Peso por pieza (kg)</Label><Input data-testid="ship-weight" type="number" step="0.1" className={field} value={s.default_weight_kg ?? 1} onChange={(e) => setS({ ...s, default_weight_kg: e.target.value })} /></div>
+        </div>
+        <p className="text-[11px] text-[#6E675E]">CP de origen y peso se usan para cotizar en vivo con el transportista cuando lo actives abajo. Sin eso, se aplica el costo base/zonas.</p>
         <div>
           <Label className={lbl}>Zonas por provincia (sobrescriben el costo base)</Label>
           <div className="space-y-2 mt-2">
