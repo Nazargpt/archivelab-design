@@ -893,6 +893,7 @@ async def startup():
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password), "role": "admin"}})
     await seed_demo()
     await seed_events()
+    await seed_content()
     try:
         init_storage()
         logger.info("Storage initialized")
@@ -904,6 +905,8 @@ async def seed_demo():
     if await db.products.count_documents({}) > 0:
         return
     base = APP_BASE_URL
+    img = lambda pid: f"https://images.unsplash.com/photo-{pid}?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400"
+    brand = lambda n: f"{base}/brand/img{n}.jpeg"
     demo = [
         {"design_code": "DNM01", "name": "Campera Intervenida 001", "category": "denim",
          "edition_name": "Liberación I", "edition_total": 8, "price": 89000.0,
@@ -914,29 +917,93 @@ async def seed_demo():
          "care": "Lavar del revés en agua fría. No usar secadora. Planchar a temperatura media.",
          "shipping_info": "Envío a todo el país. Despacho en 3 a 5 días hábiles.",
          "sizes": [{"label": "1", "measurements": "Hombro 40 · Busto 96 · Largo 58"},
-                   {"label": "2", "measurements": "Hombro 42 · Busto 100 · Largo 60"}],
-         "images": [f"{base}/brand/img3.jpeg", f"{base}/brand/img1.jpeg"], "video": None, "status": "published"},
+                   {"label": "2", "measurements": "Hombro 42 · Busto 100 · Largo 60"},
+                   {"label": "3", "measurements": "Hombro 44 · Busto 104 · Largo 62"}],
+         "images": [img("1697924293303-34488b60bf36"), img("1741941171881-40832346c7fe"), img("1572122936109-ce84b9cd5439")],
+         "video": f"{base}/brand/hero.mp4", "status": "published"},
+        {"design_code": "DNM02", "name": "Jean Expediente Deconstruido", "category": "denim",
+         "edition_name": "Liberación I", "edition_total": 10, "price": 76000.0,
+         "color": "Azul lavado", "vip": False,
+         "concept": "Un jean clásico que se rompe y se vuelve a construir. Formal + rebelde en la misma prenda.",
+         "interventions": "Paneles recortados y recosidos. Roturas selladas a mano.",
+         "materials": "Denim 100% algodón, 12oz.",
+         "care": "Lavar del revés. Evitar secadora.",
+         "shipping_info": "Envío a todo el país. Retiro en persona en CABA.",
+         "sizes": [{"label": "1", "measurements": "Cintura 66 · Tiro 28"},
+                   {"label": "2", "measurements": "Cintura 70 · Tiro 29"},
+                   {"label": "3", "measurements": "Cintura 74 · Tiro 30"}],
+         "images": [img("1640336437338-5c36f7e1115f"), img("1616411598297-e0053c6ee59d")],
+         "video": None, "status": "published"},
+        {"design_code": "DNM03", "name": "Campera Doble Liberación", "category": "denim",
+         "edition_name": "Liberación I", "edition_total": 6, "price": 98000.0,
+         "color": "Negro teñido", "vip": False, "seed_sold_out": True,
+         "concept": "Edición agotada. Quedó en el archivo histórico como registro de la primera liberación.",
+         "interventions": "Doble capa de denim con intervención total a mano.",
+         "materials": "Denim reciclado y nuevo, construcción mixta.",
+         "care": "Limpieza en seco recomendada.",
+         "shipping_info": "Agotada. Podés anotarte para novedades.",
+         "sizes": [{"label": "1", "measurements": "Hombro 41 · Largo 60"},
+                   {"label": "2", "measurements": "Hombro 43 · Largo 62"}],
+         "images": [img("1699379012687-7da0cd15f3cb"), img("1741941171881-40832346c7fe")],
+         "video": None, "status": "published"},
         {"design_code": "INT01", "name": "Corset Expediente", "category": "intima",
          "edition_name": "Liberación I", "edition_total": 5, "price": 72000.0,
          "color": "Negro mate", "vip": False,
          "concept": "Estructura y rebeldía en la misma pieza. Formal y statement al mismo tiempo: la belleza de los opuestos.",
-         "interventions": "Ballenas moldeadas. Cierre posterior regulable.",
+         "interventions": "Ballenas moldeadas. Cierre posterior regulable con cordonería.",
          "materials": "Mezcla de algodón y elastano. Forrería interna de satén.",
          "care": "Limpieza en seco recomendada.",
          "shipping_info": "Envío a todo el país. Retiro en persona disponible en CABA.",
          "sizes": [{"label": "1", "measurements": "Busto 84 · Cintura 64"},
                    {"label": "2", "measurements": "Busto 88 · Cintura 68"}],
-         "images": [f"{base}/brand/img1.jpeg", f"{base}/brand/img2.jpeg"], "video": None, "status": "published"},
+         "images": [img("1652397902034-9f9483171e74"), img("1579071072964-395e8239d579")],
+         "video": None, "status": "published"},
+        {"design_code": "INT02", "name": "Body de Archivo", "category": "intima",
+         "edition_name": "Liberación I", "edition_total": 7, "price": 58000.0,
+         "color": "Negro", "vip": False,
+         "concept": "Minimalista + statement. Una base poderosa para construir el look alrededor.",
+         "interventions": "Encaje aplicado a mano en los laterales.",
+         "materials": "Microfibra con encaje de algodón.",
+         "care": "Lavar a mano en agua fría.",
+         "shipping_info": "Envío a todo el país.",
+         "sizes": [{"label": "1", "measurements": "Busto 82"},
+                   {"label": "2", "measurements": "Busto 86"},
+                   {"label": "3", "measurements": "Busto 90"}],
+         "images": [img("1716652841447-df18e7a026a8"), img("1618902751861-3de78572c067")],
+         "video": None, "status": "published"},
+        {"design_code": "ACC01", "name": "Guantes Intervenidos", "category": "accesorios",
+         "edition_name": "Liberación I", "edition_total": 12, "price": 34000.0,
+         "color": "Negro", "vip": False,
+         "concept": "El detalle que transforma un look entero. Clásico + inesperado.",
+         "interventions": "Costura expuesta y largo asimétrico.",
+         "materials": "Punto elastizado con terminación mate.",
+         "care": "Lavar a mano.",
+         "shipping_info": "Envío a todo el país.",
+         "sizes": [{"label": "Único", "measurements": "Talle universal"}],
+         "images": [img("1617183088274-e1e9e201ebbb")],
+         "video": None, "status": "published"},
         {"design_code": "CAR01", "name": "Bolso Archivo", "category": "carteras",
          "edition_name": "Liberación I", "edition_total": 6, "price": 115000.0,
-         "color": "Cuero natural", "vip": False,
+         "color": "Cuero negro", "vip": False,
          "concept": "Un objeto para quedarse. Construido para durar más que cualquier tendencia.",
          "interventions": "Herrajes aplicados a mano. Numeración grabada.",
-         "materials": "Cuero vacuno curtido vegetal.",
+         "materials": "Cuero vacuno curtido vegetal. Herrajes plateados.",
          "care": "Hidratar el cuero cada tanto. Evitar humedad prolongada.",
          "shipping_info": "Envío asegurado a todo el país.",
          "sizes": [{"label": "Único", "measurements": "28 × 20 × 10 cm"}],
-         "images": [f"{base}/brand/img2.jpeg", f"{base}/brand/img3.jpeg"], "video": None, "status": "published"},
+         "images": [img("1614179689702-355944cd0918"), img("1589363358751-ab05797e5629")],
+         "video": None, "status": "published"},
+        {"design_code": "CAR02", "name": "Cartera Expediente Noche", "category": "carteras",
+         "edition_name": "Liberación I", "edition_total": 4, "price": 132000.0,
+         "color": "Negro", "vip": False,
+         "concept": "Sofisticado + canchero. Para la pieza que cierra el look.",
+         "interventions": "Cadena desmontable. Broche escultórico.",
+         "materials": "Cuero y metal.",
+         "care": "Guardar en su bolsa de tela.",
+         "shipping_info": "Envío asegurado a todo el país.",
+         "sizes": [{"label": "Único", "measurements": "22 × 14 × 6 cm"}],
+         "images": [img("1589363358751-ab05797e5629"), img("1614179689702-355944cd0918")],
+         "video": None, "status": "published"},
         {"design_code": "CG01", "name": "Pieza Única — Camila Guerra", "category": "accesorios",
          "edition_name": "Archivo privado", "edition_total": 2, "price": 240000.0,
          "color": "Bone", "vip": True,
@@ -946,16 +1013,32 @@ async def seed_demo():
          "care": "Ficha de cuidado incluida con la pieza.",
          "shipping_info": "Entrega coordinada personalmente.",
          "sizes": [{"label": "Único", "measurements": "A medida"}],
-         "images": [f"{base}/brand/img1.jpeg", f"{base}/brand/img2.jpeg"], "video": None, "status": "published"},
+         "images": [img("1645951251394-5f841f31e9ee"), img("1635279474047-ab3cda78bbe8")],
+         "video": None, "status": "published"},
+        {"design_code": "CG02", "name": "Corset Firmado CG", "category": "intima",
+         "edition_name": "Archivo privado", "edition_total": 3, "price": 180000.0,
+         "color": "Negro", "vip": True,
+         "concept": "Femenino + poderoso. Edición firmada, sólo para miembros del archivo.",
+         "interventions": "Intervención y firma autorizada de la creadora.",
+         "materials": "Satén de seda con estructura interna.",
+         "care": "Limpieza en seco exclusivamente.",
+         "shipping_info": "Entrega coordinada personalmente.",
+         "sizes": [{"label": "1", "measurements": "Busto 84 · Cintura 64"},
+                   {"label": "2", "measurements": "Busto 88 · Cintura 68"}],
+         "images": [img("1652397902034-9f9483171e74"), brand(1)],
+         "video": None, "status": "published"},
         {"design_code": "VST01", "name": "Vestido Avant (consulta)", "category": "intima",
          "edition_name": "Prototipo", "edition_total": None, "price": None,
          "color": "A definir", "vip": False,
          "concept": "Pieza en desarrollo. Todavía no tiene precio ni edición cerrada: podés anotar tu interés.",
          "interventions": "", "materials": "", "care": "", "shipping_info": "",
          "sizes": [{"label": "1", "measurements": ""}],
-         "images": [f"{base}/brand/img2.jpeg"], "video": None, "status": "published"},
+         "images": [img("1635279474047-ab3cda78bbe8"), img("1717944105945-669b3dd77bfd")],
+         "video": None, "status": "published"},
     ]
+    created_units = {}
     for d in demo:
+        sold_out = d.pop("seed_sold_out", False)
         pid = f"prod_{uuid.uuid4().hex[:12]}"
         d["id"] = pid
         d["created_at"] = iso(now_utc())
@@ -968,11 +1051,38 @@ async def seed_demo():
                 for _ in range(per_size):
                     n += 1
                     code = f"AL-{d['design_code']}-{n:03d}-{uuid.uuid4().hex[:4].upper()}"
-                    await db.units.insert_one({"id": f"unit_{uuid.uuid4().hex[:12]}", "product_id": pid,
+                    unit = {"id": f"unit_{uuid.uuid4().hex[:12]}", "product_id": pid,
                         "unit_code": code, "edition_number": n, "size": sz["label"],
-                        "color": d.get("color", ""), "status": "disponible", "order_id": None,
-                        "reserved_until": None, "history": [{"at": iso(now_utc()), "action": "creada"}],
-                        "created_at": iso(now_utc())})
+                        "color": d.get("color", ""), "status": "vendida" if sold_out else "disponible",
+                        "order_id": None, "reserved_until": None,
+                        "history": [{"at": iso(now_utc()), "action": "creada"}],
+                        "created_at": iso(now_utc())}
+                    await db.units.insert_one(dict(unit))
+                    created_units.setdefault(d["design_code"], []).append(unit)
+    # Ensure a sample customer so Mi Archivo is demoable
+    cust = await db.users.find_one({"email": "cliente@test.com"})
+    if not cust:
+        cust = {"id": f"user_{uuid.uuid4().hex[:12]}", "email": "cliente@test.com",
+                "name": "Clienta de prueba", "password_hash": hash_password("Cliente123!"),
+                "role": "customer", "picture": None, "created_at": iso(now_utc())}
+        await db.users.insert_one(dict(cust))
+    # Sample paid order (one Body de Archivo unit) so Mi Archivo shows a piece
+    sample_unit = (created_units.get("INT02") or [None])[0]
+    if sample_unit:
+        prod = next((x for x in demo if x["design_code"] == "INT02"), None)
+        oid = f"order_{uuid.uuid4().hex[:14]}"
+        item = {"unit_id": sample_unit["id"], "unit_code": sample_unit["unit_code"],
+                "product_id": prod["id"], "name": prod["name"], "design_code": "INT02",
+                "size": sample_unit["size"], "edition_number": sample_unit["edition_number"],
+                "price": prod["price"], "image": prod["images"][0]}
+        await db.orders.insert_one({"id": oid, "status": "paid", "kind": "pieces", "items": [item],
+            "total": prod["price"], "currency": CURRENCY, "user_id": cust["id"],
+            "guest_email": "cliente@test.com", "guest_name": "Clienta de prueba",
+            "shipping_method": "envio", "shipping_address": "Buenos Aires",
+            "created_at": iso(now_utc()), "paid_at": iso(now_utc()),
+            "payment": {"mode": "demo", "status": "approved"}})
+        await db.units.update_one({"id": sample_unit["id"]}, {"$set": {"status": "vendida", "order_id": oid},
+            "$push": {"history": {"at": iso(now_utc()), "action": "vendida", "order_id": oid}}})
     logger.info("Demo data seeded")
 
 
@@ -980,21 +1090,74 @@ async def seed_events():
     if await db.events.count_documents({}) > 0:
         return
     base = APP_BASE_URL
+    img = lambda pid: f"https://images.unsplash.com/photo-{pid}?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400"
     evs = [
         {"title": "Liberación I — Desfile de apertura", "type": "desfile",
          "description": "Presentación en vivo de la primera liberación del archivo. Cupos limitados, con entrada.",
-         "date": "A confirmar", "location": "Buenos Aires (a confirmar)", "image": f"{base}/brand/img3.jpeg",
+         "date": "Sábado, hora a confirmar", "location": "Buenos Aires (a confirmar)", "image": img("1635279474047-ab3cda78bbe8"),
          "price": 18000.0, "capacity": 40, "status": "published"},
         {"title": "Visita al laboratorio — Expediente abierto", "type": "presentacion",
          "description": "Recorrido por el proceso detrás de las piezas: intervenciones, materiales y archivo. Entrada libre con inscripción previa.",
          "date": "A confirmar", "location": "Buenos Aires (a confirmar)", "image": f"{base}/brand/img2.jpeg",
          "price": None, "capacity": 25, "status": "published"},
+        {"title": "Liberación II — Acceso anticipado para miembros", "type": "lanzamiento",
+         "description": "Preview exclusivo de la próxima liberación para miembros del archivo. Entrada libre con inscripción.",
+         "date": "A confirmar", "location": "Online + Buenos Aires", "image": img("1717944105945-669b3dd77bfd"),
+         "price": None, "capacity": 30, "status": "published"},
+        {"title": "Exposición: Archivo Abierto", "type": "exposicion",
+         "description": "Muestra de piezas de archivo y su documentación. Entrada general con inscripción.",
+         "date": "A confirmar", "location": "Buenos Aires (a confirmar)", "image": img("1645951251394-5f841f31e9ee"),
+         "price": 12000.0, "capacity": 50, "status": "published"},
     ]
+    created = []
     for e in evs:
         e["id"] = f"event_{uuid.uuid4().hex[:12]}"
         e["created_at"] = iso(now_utc())
         await db.events.insert_one(dict(e))
+        created.append(e)
+    # Sample registrations for the demo customer
+    cust = await db.users.find_one({"email": "cliente@test.com"})
+    if cust and created:
+        free_ev = next((e for e in created if e["price"] is None), None)
+        paid_ev = next((e for e in created if e["price"] is not None), None)
+        if free_ev:
+            await db.event_registrations.insert_one({"id": f"reg_{uuid.uuid4().hex[:12]}",
+                "event_id": free_ev["id"], "event_title": free_ev["title"], "event_date": free_ev.get("date", ""),
+                "user_id": cust["id"], "name": "Clienta de prueba", "email": "cliente@test.com",
+                "order_id": None, "status": "anotada", "created_at": iso(now_utc())})
+        if paid_ev:
+            oid = f"order_{uuid.uuid4().hex[:14]}"
+            await db.orders.insert_one({"id": oid, "status": "paid", "kind": "event", "currency": CURRENCY,
+                "items": [{"event_id": paid_ev["id"], "name": f"Entrada · {paid_ev['title']}", "price": paid_ev["price"]}],
+                "total": paid_ev["price"], "user_id": cust["id"], "guest_email": "cliente@test.com",
+                "guest_name": "Clienta de prueba", "created_at": iso(now_utc()), "paid_at": iso(now_utc()),
+                "payment": {"mode": "demo", "status": "approved"}})
+            await db.event_registrations.insert_one({"id": f"reg_{uuid.uuid4().hex[:12]}",
+                "event_id": paid_ev["id"], "event_title": paid_ev["title"], "event_date": paid_ev.get("date", ""),
+                "user_id": cust["id"], "name": "Clienta de prueba", "email": "cliente@test.com",
+                "order_id": oid, "status": "pagada", "created_at": iso(now_utc())})
     logger.info("Demo events seeded")
+
+
+async def seed_content():
+    if not await db.content.find_one({"id": "home"}):
+        await db.content.insert_one({"id": "home",
+            "hero_title": "Construí tu propio archivo",
+            "hero_subtitle": "No necesitás más ropa. Necesitás mejores piezas. Moda de autor en ediciones limitadas, pensada para quedarse.",
+            "hero_video": None,
+            "manifesto": "Archive Lab funciona como un museo de piezas de archivo. Cada drop es una liberación. Cada prenda tiene su propia identidad. Cada edición es limitada. Cada adquisición pasa a formar parte del archivo personal de quien la compra. No buscamos producir más, sino producir mejor y con intención.",
+            "creator_bio": "Camila Guerra — Cami Guerra. Creadora digital, asesora de imagen y modelo, desde Buenos Aires. Diseña cada pieza para que sea reconocible incluso sin logo: la autoría vive en las siluetas, los acabados, las intervenciones y los detalles. La ropa correcta cambia cómo te ven y cómo te sentís. A brillar, amores."})
+    if not await db.content.find_one({"id": "legal"}):
+        await db.content.insert_one({"id": "legal",
+            "privacy": "En Archive Lab cuidamos tus datos. Usamos la información que nos dejás (nombre, email, dirección) únicamente para procesar tus pedidos, inscripciones a eventos y comunicaciones del archivo. No compartimos tus datos con terceros ajenos a la operación. Podés pedir la baja o corrección escribiéndonos. (Texto de ejemplo, ajustable desde el panel.)",
+            "terms": "Las piezas de Archive Lab son de autor y de edición limitada. Los precios están expresados en pesos argentinos. El pago se procesa de forma segura a través de Mercado Pago y un pedido se considera confirmado sólo cuando el pago es aprobado. Las reservas de unidades tienen una expiración para evitar la doble venta. (Texto de ejemplo, ajustable desde el panel.)",
+            "returns": "Aceptamos cambios dentro de los 10 días de recibida la pieza, conservando su etiqueta y ficha de archivo, siempre que la unidad esté en las mismas condiciones. Por tratarse de piezas de edición limitada e intervenidas a mano, algunas variaciones son parte de su carácter y no se consideran fallas. Escribinos para coordinar. (Texto de ejemplo, ajustable desde el panel.)"})
+    if not await db.settings.find_one({"id": "main"}):
+        await db.settings.insert_one({"id": "main", "currency": CURRENCY, "shipping_zones": [],
+            "pickup_enabled": True, "contact_email": "hola@archivelab.design",
+            "contact_whatsapp": "+54 9 11 5555 5555", "instagram": "archivelab",
+            "pinterest": "archivelab", "address": "Buenos Aires, Argentina"})
+    logger.info("Demo content seeded")
 
 @app.on_event("shutdown")
 async def shutdown():
