@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import ProductEditor from "@/pages/admin/ProductEditor";
 
-const TABS = [["piezas", "Piezas"], ["eventos", "Eventos"], ["liberaciones", "Liberaciones"], ["pedidos", "Pedidos"], ["contenido", "Contenido"], ["ajustes", "Ajustes"]];
+const TABS = [["piezas", "Piezas"], ["eventos", "Eventos"], ["liberaciones", "Liberaciones"], ["envios", "Envíos"], ["pedidos", "Pedidos"], ["contenido", "Contenido"], ["ajustes", "Ajustes"]];
 const field = "mt-1.5 bg-[#121212] border-[#2A2A2A] text-[#F5F4F0]";
 const lbl = "dossier-label text-[#6E675E]";
 
@@ -28,6 +28,7 @@ export default function Admin() {
       {tab === "piezas" && <PiezasTab />}
       {tab === "eventos" && <EventosTab />}
       {tab === "liberaciones" && <LiberacionesTab />}
+      {tab === "envios" && <EnviosTab />}
       {tab === "pedidos" && <PedidosTab />}
       {tab === "contenido" && <ContenidoTab />}
       {tab === "ajustes" && <AjustesTab />}
@@ -77,7 +78,8 @@ function PiezasTab() {
 
 function PedidosTab() {
   const [orders, setOrders] = useState([]);
-  useEffect(() => { api.get("/admin/orders").then((r) => setOrders(r.data)).catch(() => {}); }, []);
+  const load = () => api.get("/admin/orders").then((r) => setOrders(r.data)).catch(() => {});
+  useEffect(() => { load(); }, []);
   return (
     <div className="flex flex-col gap-3">
       {orders.length === 0 && <p className="text-[#8C857B]">Sin pedidos todavía.</p>}
@@ -94,11 +96,39 @@ function PedidosTab() {
             </div>
           </div>
           <div className="mt-3 pt-3 border-t border-[#161616] text-xs text-[#8C857B]">
-            {o.items.map((i) => <div key={i.unit_id}>{i.name} · T{i.size} · {i.unit_code}</div>)}
-            <div className="mt-1 text-[#6E675E]">Entrega: {o.shipping_method} {o.shipping_address && `· ${o.shipping_address}`}</div>
+            {o.items.map((i, idx) => <div key={i.unit_id || idx}>{i.name}{i.size ? ` · T${i.size}` : ""}{i.unit_code ? ` · ${i.unit_code}` : ""}</div>)}
+            <div className="mt-1 text-[#6E675E]">Entrega: {o.shipping_method || "—"} {o.shipping_address && `· ${o.shipping_address}`}</div>
           </div>
+          {o.status === "paid" && (o.kind || "pieces") !== "event" && <ShippingEditor order={o} onSaved={load} />}
         </div>
       ))}
+    </div>
+  );
+}
+
+function ShippingEditor({ order, onSaved }) {
+  const [s, setS] = useState({ status: order.shipping_status || "pendiente", carrier: order.carrier || "", tracking_number: order.tracking_number || "", tracking_url: order.tracking_url || "" });
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try { await api.put(`/admin/orders/${order.id}/shipping`, s); toast.success(s.status === "enviado" ? "Marcado como enviado · email enviado" : "Envío actualizado"); onSaved(); }
+    catch (e) { toast.error(errMsg(e)); }
+    setBusy(false);
+  };
+  return (
+    <div className="mt-3 pt-3 border-t border-[#161616]">
+      <div className="dossier-label text-[#6E675E] mb-2">Envío y seguimiento</div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <select data-testid={`ship-status-${order.id}`} value={s.status} onChange={(e) => setS({ ...s, status: e.target.value })} className={`${field} mt-0 h-9 px-2 rounded-md border text-sm`}>
+          <option value="pendiente">Preparando</option>
+          <option value="enviado">Enviado</option>
+          <option value="entregado">Entregado</option>
+        </select>
+        <Input className={`${field} mt-0 h-9`} placeholder="Transportista" value={s.carrier} onChange={(e) => setS({ ...s, carrier: e.target.value })} />
+        <Input data-testid={`ship-tracking-${order.id}`} className={`${field} mt-0 h-9`} placeholder="Nº seguimiento" value={s.tracking_number} onChange={(e) => setS({ ...s, tracking_number: e.target.value })} />
+        <Input className={`${field} mt-0 h-9`} placeholder="URL seguimiento (https)" value={s.tracking_url} onChange={(e) => setS({ ...s, tracking_url: e.target.value })} />
+      </div>
+      <button data-testid={`ship-save-${order.id}`} onClick={save} disabled={busy} className="btn-outline-ink px-5 py-2 dossier-label mt-2 disabled:opacity-60">{busy ? "Guardando…" : "Guardar envío"}</button>
     </div>
   );
 }
@@ -344,6 +374,76 @@ function WaitlistModalAdmin({ release, onClose }) {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function EnviosTab() {
+  const [s, setS] = useState(null);
+  const [carriers, setCarriers] = useState(null);
+
+  useEffect(() => {
+    api.get("/settings").then((r) => setS({ flat_cost: 0, free_threshold: "", pickup_enabled: true, shipping_zones: [], ...r.data, free_threshold: r.data.free_threshold ?? "" })).catch(() => {});
+    api.get("/admin/carriers").then((r) => setCarriers(r.data)).catch(() => {});
+  }, []);
+
+  const saveShipping = async () => {
+    const payload = { ...s, free_threshold: s.free_threshold === "" ? null : Number(s.free_threshold), flat_cost: Number(s.flat_cost || 0) };
+    try { await api.put("/admin/settings", payload); toast.success("Envíos actualizados"); } catch (e) { toast.error(errMsg(e)); }
+  };
+  const saveCarriers = async () => {
+    const out = {};
+    for (const k of Object.keys(carriers.fields)) out[k] = { enabled: !!carriers[k]?.enabled, credentials: carriers[k]?.credentials || {} };
+    try { await api.put("/admin/carriers", out); toast.success("Credenciales guardadas"); } catch (e) { toast.error(errMsg(e)); }
+  };
+  const setZone = (i, k, v) => { const z = [...s.shipping_zones]; z[i] = { ...z[i], [k]: v }; setS({ ...s, shipping_zones: z }); };
+
+  if (!s || !carriers) return <p className="dossier-label text-[#6E675E]">cargando…</p>;
+
+  return (
+    <div className="max-w-2xl space-y-10">
+      <div className="space-y-4">
+        <h3 className="font-display font-bold uppercase tracking-tight text-xl text-[#F5F4F0]">Costos de envío</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div><Label className={lbl}>Costo base ARS</Label><Input data-testid="ship-flat" type="number" className={field} value={s.flat_cost} onChange={(e) => setS({ ...s, flat_cost: e.target.value })} /></div>
+          <div><Label className={lbl}>Envío gratis desde ARS (vacío = nunca)</Label><Input type="number" className={field} value={s.free_threshold} onChange={(e) => setS({ ...s, free_threshold: e.target.value })} /></div>
+        </div>
+        <label className="flex items-center gap-3"><input type="checkbox" checked={s.pickup_enabled} onChange={(e) => setS({ ...s, pickup_enabled: e.target.checked })} className="w-4 h-4 accent-[#E6E2DD]" /><span className="text-sm text-[#A39B8E]">Permitir retiro en persona (CABA)</span></label>
+        <div>
+          <Label className={lbl}>Zonas por provincia (sobrescriben el costo base)</Label>
+          <div className="space-y-2 mt-2">
+            {s.shipping_zones.map((z, i) => (
+              <div key={i} className="flex gap-2">
+                <Input className={`${field} mt-0 w-32`} placeholder="Nombre" value={z.name || ""} onChange={(e) => setZone(i, "name", e.target.value)} />
+                <Input className={`${field} mt-0 flex-1`} placeholder="Provincias (coma)" value={(z.provinces || []).join(", ")} onChange={(e) => setZone(i, "provinces", e.target.value.split(",").map((x) => x.trim()).filter(Boolean))} />
+                <Input className={`${field} mt-0 w-28`} type="number" placeholder="Costo" value={z.cost || ""} onChange={(e) => setZone(i, "cost", Number(e.target.value))} />
+                <button onClick={() => setS({ ...s, shipping_zones: s.shipping_zones.filter((_, j) => j !== i) })} className="text-[#6E675E] hover:text-[#9E2A2B] px-2"><Trash2 size={16} /></button>
+              </div>
+            ))}
+            <button onClick={() => setS({ ...s, shipping_zones: [...s.shipping_zones, { name: "", provinces: [], cost: 0 }] })} className="dossier-label text-[#8C857B] hover:text-[#F5F4F0] inline-flex items-center gap-1"><Plus size={14} /> Agregar zona</button>
+          </div>
+        </div>
+        <button data-testid="save-shipping" onClick={saveShipping} className="btn-ink px-6 py-3 dossier-label">Guardar costos</button>
+      </div>
+
+      <div className="space-y-4">
+        <h3 className="font-display font-bold uppercase tracking-tight text-xl text-[#F5F4F0]">Transportistas (credenciales)</h3>
+        <p className="text-xs text-[#6E675E]">Cargá las credenciales de API de tu cuenta con cada correo y activalo. La generación automática de envíos se habilita al activar la integración con esas credenciales.</p>
+        {Object.entries(carriers.fields).map(([k, flds]) => (
+          <div key={k} className="museum-frame p-4" data-testid={`carrier-${k}`}>
+            <label className="flex items-center justify-between mb-3">
+              <span className="font-display font-bold uppercase tracking-tight text-[#F5F4F0]">{k}</span>
+              <span className="flex items-center gap-2"><input data-testid={`carrier-${k}-enabled`} type="checkbox" checked={!!carriers[k]?.enabled} onChange={(e) => setCarriers({ ...carriers, [k]: { ...carriers[k], enabled: e.target.checked } })} className="w-4 h-4 accent-[#72B078]" /><span className="dossier-label text-[#8C857B]">activo</span></span>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {flds.map((fld) => (
+                <div key={fld}><Label className={lbl}>{fld}</Label><Input className={field} value={carriers[k]?.credentials?.[fld] || ""} onChange={(e) => setCarriers({ ...carriers, [k]: { ...carriers[k], credentials: { ...(carriers[k]?.credentials || {}), [fld]: e.target.value } } })} /></div>
+              ))}
+            </div>
+          </div>
+        ))}
+        <button data-testid="save-carriers" onClick={saveCarriers} className="btn-ink px-6 py-3 dossier-label">Guardar credenciales</button>
       </div>
     </div>
   );

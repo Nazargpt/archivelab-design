@@ -7,6 +7,7 @@ import api, { formatARS, errMsg } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { setSeo } from "@/lib/seo";
 
 const TYPE_LABEL = { desfile: "Desfile", lanzamiento: "Lanzamiento", exposicion: "Exposición", presentacion: "Presentación" };
 
@@ -14,7 +15,10 @@ export default function Events() {
   const [events, setEvents] = useState([]);
   const [active, setActive] = useState(null);
 
-  useEffect(() => { api.get("/events").then((r) => setEvents(r.data)).catch(() => {}); }, []);
+  useEffect(() => {
+    setSeo({ title: "Eventos", description: "Desfiles, lanzamientos y presentaciones de ARCHIVE LAB. Anotate o comprá tu entrada.", path: "/eventos" });
+    api.get("/events").then((r) => setEvents(r.data)).catch(() => {});
+  }, []);
 
   return (
     <div className="px-4 sm:px-8 lg:px-16 py-12 lg:py-16">

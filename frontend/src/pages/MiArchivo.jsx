@@ -89,6 +89,13 @@ export default function MiArchivo() {
                 <div>
                   <div className="dossier-label text-[#6E675E]">{o.id}</div>
                   <div className="text-[#A39B8E] text-sm mt-1">{o.items.length} pieza(s) · {formatARS(o.total)}</div>
+                  {o.shipping_status && (
+                    <div className="dossier-label mt-2 text-[#8C857B]" data-testid={`order-shipping-${o.id}`}>
+                      Envío: {o.shipping_status === "enviado" ? "en camino" : o.shipping_status === "entregado" ? "entregado" : "preparando"}
+                      {o.tracking_number && <> · {o.carrier} {o.tracking_number}</>}
+                      {o.tracking_url && <> · <a href={o.tracking_url} target="_blank" rel="noreferrer" className="text-[#E6E2DD] hover:underline">seguir</a></>}
+                    </div>
+                  )}
                 </div>
                 <span className={`dossier-label px-3 py-1 ${o.status === "paid" ? "bg-[#1C241D] text-[#72B078]" : o.status === "created" ? "bg-[#2A2A2A] text-[#A39B8E]" : "bg-[#2A1515] text-[#c74446]"}`}>
                   {o.status === "paid" ? "pagado" : o.status === "created" ? "pendiente" : o.status}

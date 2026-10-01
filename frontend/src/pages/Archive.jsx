@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import api, { CATEGORIES } from "@/lib/api";
 import ProductCard from "@/components/ProductCard";
 import { WaitlistModal } from "@/components/WaitlistModal";
+import { setSeo } from "@/lib/seo";
 
 const AVAIL = [
   { key: "", label: "Todo" },
@@ -20,6 +21,10 @@ export default function Archive() {
   const size = sp.get("size") || "";
   const view = sp.get("view") || "disponible";
   const historic = view === "historico";
+
+  useEffect(() => {
+    setSeo({ title: "Archivo", description: "Explorá el archivo disponible: denim intervenido, íntima, accesorios y carteras. Ediciones limitadas de moda de autor.", path: "/archivo" });
+  }, []);
 
   useEffect(() => {
     setLoading(true);

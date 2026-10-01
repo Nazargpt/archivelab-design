@@ -337,16 +337,35 @@ class CheckoutIn(BaseModel):
     guest_name: Optional[str] = None
     shipping_method: str = "envio"
     shipping_address: str = ""
+    shipping_province: str = ""
+    shipping_cost: float = 0
+    carrier: str = ""
 
 class SettingsIn(BaseModel):
     currency: str = "ARS"
     shipping_zones: List[dict] = []
     pickup_enabled: bool = True
+    flat_cost: float = 0
+    free_threshold: Optional[float] = None
     contact_email: str = ""
     contact_whatsapp: str = ""
     instagram: str = ""
     pinterest: str = ""
     address: str = ""
+
+class CarrierCfg(BaseModel):
+    enabled: bool = False
+    credentials: dict = {}
+
+class CarriersIn(BaseModel):
+    andreani: CarrierCfg = CarrierCfg()
+    oca: CarrierCfg = CarrierCfg()
+    correo: CarrierCfg = CarrierCfg()
+
+class QuoteIn(BaseModel):
+    province: str = ""
+    postal_code: str = ""
+    subtotal: float = 0
 
 class HomeContentIn(BaseModel):
     hero_title: str = ""
@@ -388,6 +407,12 @@ class WaitlistIn(BaseModel):
     size: str = ""
     consent: bool = False
 
+class ShippingIn(BaseModel):
+    status: str = "enviado"  # pendiente | enviado | entregado
+    carrier: str = ""
+    tracking_number: str = ""
+    tracking_url: str = ""
+
 # ---------------------------------------------------------------------------
 # Reservation maintenance
 # ---------------------------------------------------------------------------
@@ -421,6 +446,17 @@ async def availability_summary(product_id: str):
         summary[u["size"]] = summary.get(u["size"], 0) + 1
         total += 1
     return summary, total
+
+
+async def compute_shipping(province: str, subtotal: float) -> float:
+    s = await db.settings.find_one({"id": "main"}, {"_id": 0}) or {}
+    ft = s.get("free_threshold")
+    if ft is not None and subtotal >= float(ft):
+        return 0.0
+    for z in s.get("shipping_zones", []):
+        if province and province in (z.get("provinces") or []):
+            return float(z.get("cost", 0) or 0)
+    return float(s.get("flat_cost", 0) or 0)
 
 # ---------------------------------------------------------------------------
 # Auth routes
@@ -601,12 +637,18 @@ async def checkout(body: CheckoutIn, request: Request):
             await db.units.update_one({"id": uid}, {"$set": {"status": "disponible", "order_id": None, "reserved_until": None}})
         raise
 
+    subtotal = total
+    ship_cost = 0.0 if body.shipping_method == "retiro" else await compute_shipping(body.shipping_province, subtotal)
+    total = subtotal + ship_cost
     order_id = f"order_{uuid.uuid4().hex[:14]}"
-    order = {"id": order_id, "status": "created", "kind": "pieces", "items": line_items, "total": total,
+    order = {"id": order_id, "status": "created", "kind": "pieces", "items": line_items,
+             "subtotal": subtotal, "shipping_cost": ship_cost, "total": total,
              "currency": CURRENCY, "user_id": user["id"] if user else None,
              "guest_email": (body.guest_email.lower() if body.guest_email else (user["email"] if user else None)),
              "guest_name": body.guest_name or (user["name"] if user else None),
              "shipping_method": body.shipping_method, "shipping_address": body.shipping_address,
+             "shipping_province": body.shipping_province, "carrier": body.carrier,
+             "shipping_status": "pendiente",
              "created_at": iso(now_utc()), "payment": {}}
     await db.orders.insert_one(dict(order))
     for uid in reserved:
@@ -690,6 +732,25 @@ async def send_order_email(order: dict, kind: str):
          "En Mi Archivo vas a encontrar la ficha digital y el certificado descargable de cada pieza."],
         "Ver Mi Archivo", f"{APP_BASE_URL}/mi-archivo")
     await send_email(to=to, subject="Tu pieza entró al archivo · ARCHIVE LAB", html=html)
+
+
+async def send_shipment_email(order: dict):
+    to = order.get("guest_email")
+    if not to:
+        return
+    name = order.get("guest_name") or ""
+    carrier = order.get("carrier") or ""
+    tracking = order.get("tracking_number") or ""
+    track_line = f"Transportista: {escape(carrier)} · Seguimiento: {escape(tracking)}" if tracking else ""
+    tu = order.get("tracking_url") or ""
+    cta_url = tu if tu.startswith("https://") else f"{APP_BASE_URL}/mi-archivo"
+    html = _email_shell("Tu pedido está en camino",
+        [f"Hola {escape(name)}," if name else "Hola,",
+         "Despachamos tu pedido. Ya está viajando hacia vos.",
+         track_line,
+         "Podés seguir el estado del envío desde el botón de abajo o en Mi Archivo."],
+        "Seguir el envío", cta_url)
+    await send_email(to=to, subject="Tu pedido está en camino · ARCHIVE LAB", html=html)
 
 @api.post("/demo/approve/{order_id}")
 async def demo_approve(order_id: str):
@@ -1190,6 +1251,76 @@ async def admin_orders(admin=Depends(require_admin)):
     async for o in db.orders.find({}, {"_id": 0}).sort("created_at", -1):
         out.append(o)
     return out
+
+@api.put("/admin/orders/{order_id}/shipping")
+async def admin_order_shipping(order_id: str, body: ShippingIn, admin=Depends(require_admin)):
+    o = await db.orders.find_one({"id": order_id})
+    if not o:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    was = o.get("shipping_status")
+    upd = {"shipping_status": body.status, "carrier": body.carrier,
+           "tracking_number": body.tracking_number, "tracking_url": body.tracking_url}
+    if body.status == "enviado" and was != "enviado":
+        upd["shipped_at"] = iso(now_utc())
+    await db.orders.update_one({"id": order_id}, {"$set": upd})
+    o = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if body.status == "enviado" and was != "enviado":
+        await send_shipment_email(o)
+    return o
+
+CARRIER_FIELDS = {
+    "andreani": ["usuario", "clave", "cliente", "contrato", "entorno"],
+    "oca": ["usuario", "clave", "cuit", "cuenta"],
+    "correo": ["usuario", "clave", "cliente"],
+}
+
+@api.post("/shipping/quote")
+async def shipping_quote(body: QuoteIn):
+    s = await db.settings.find_one({"id": "main"}, {"_id": 0}) or {}
+    carriers = await db.settings.find_one({"id": "carriers"}, {"_id": 0}) or {}
+    enabled = [k for k in CARRIER_FIELDS if (carriers.get(k) or {}).get("enabled")]
+    cost = await compute_shipping(body.province, body.subtotal)
+    free = s.get("free_threshold") is not None and body.subtotal >= float(s["free_threshold"])
+    label = "Envío a domicilio"
+    if enabled:
+        label += " (" + ", ".join(c.capitalize() for c in enabled) + ")"
+    options = [{"method": "envio", "label": label, "cost": 0 if free else cost, "free": free}]
+    if s.get("pickup_enabled", True):
+        options.append({"method": "retiro", "label": "Retiro en persona (CABA)", "cost": 0, "free": True})
+    return {"options": options}
+
+@api.get("/admin/carriers")
+async def admin_get_carriers(admin=Depends(require_admin)):
+    doc = await db.settings.find_one({"id": "carriers"}, {"_id": 0}) or {}
+    base = {k: (doc.get(k) or {"enabled": False, "credentials": {}}) for k in CARRIER_FIELDS}
+    base["fields"] = CARRIER_FIELDS
+    return base
+
+@api.put("/admin/carriers")
+async def admin_put_carriers(body: CarriersIn, admin=Depends(require_admin)):
+    doc = body.model_dump()
+    doc["id"] = "carriers"
+    await db.settings.update_one({"id": "carriers"}, {"$set": doc}, upsert=True)
+    return {"ok": True}
+
+async def create_shipment(carrier: str, cfg: dict, order: dict):
+    # Integration point per transportista. Se activa al cargar credenciales reales + contrato de API.
+    raise HTTPException(status_code=501, detail=(
+        f"La generación automática con {carrier.capitalize()} está lista para activarse: cargá las credenciales "
+        f"en el panel de Envíos y pedí la activación. Por ahora cargá el seguimiento manualmente en el pedido."))
+
+@api.post("/admin/orders/{order_id}/fulfill")
+async def admin_fulfill(order_id: str, carrier: str, admin=Depends(require_admin)):
+    o = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not o:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    if carrier not in CARRIER_FIELDS:
+        raise HTTPException(status_code=400, detail="Transportista inválido")
+    carriers = await db.settings.find_one({"id": "carriers"}, {"_id": 0}) or {}
+    cfg = carriers.get(carrier) or {}
+    if not cfg.get("enabled") or not (cfg.get("credentials") or {}):
+        raise HTTPException(status_code=400, detail=f"Configurá y habilitá {carrier.capitalize()} con sus credenciales en el panel de Envíos.")
+    return await create_shipment(carrier, cfg, o)
 
 @api.put("/admin/settings")
 async def admin_settings(body: SettingsIn, admin=Depends(require_admin)):

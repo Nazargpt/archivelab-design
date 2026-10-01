@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { BellRing, CalendarClock } from "lucide-react";
 import api from "@/lib/api";
 import { WaitlistModal } from "@/components/WaitlistModal";
+import { setSeo } from "@/lib/seo";
 
 const BRAND = process.env.REACT_APP_BACKEND_URL;
 
@@ -10,7 +11,10 @@ export default function Releases() {
   const [releases, setReleases] = useState([]);
   const [active, setActive] = useState(null);
 
-  useEffect(() => { api.get("/releases").then((r) => setReleases(r.data)).catch(() => {}); }, []);
+  useEffect(() => {
+    setSeo({ title: "Próximas liberaciones", description: "Lo que viene al archivo. Anotate a la lista de espera para acceso anticipado.", path: "/liberaciones" });
+    api.get("/releases").then((r) => setReleases(r.data)).catch(() => {});
+  }, []);
 
   return (
     <div>

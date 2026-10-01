@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import api from "@/lib/api";
 import ProductCard from "@/components/ProductCard";
+import { setSeo } from "@/lib/seo";
 
 const BRAND = process.env.REACT_APP_BACKEND_URL;
 
@@ -12,6 +13,7 @@ export default function Home() {
   const [home, setHome] = useState({});
 
   useEffect(() => {
+    setSeo({ title: "", description: "Un museo de piezas de archivo. Moda de autor de Camila Guerra en ediciones limitadas. Construí tu propio archivo.", path: "/" });
     api.get("/products").then((r) => setProducts(r.data.slice(0, 6))).catch(() => {});
     api.get("/content/home").then((r) => setHome(r.data)).catch(() => {});
   }, []);

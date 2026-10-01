@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
@@ -8,6 +8,8 @@ import api, { formatARS, errMsg } from "@/lib/api";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 
+const PROVINCES = ["CABA", "Buenos Aires", "Catamarca", "Chaco", "Chubut", "Córdoba", "Corrientes", "Entre Ríos", "Formosa", "Jujuy", "La Pampa", "La Rioja", "Mendoza", "Misiones", "Neuquén", "Río Negro", "Salta", "San Juan", "San Luis", "Santa Cruz", "Santa Fe", "Santiago del Estero", "Tierra del Fuego", "Tucumán"];
+
 export default function Checkout() {
   const { items, total } = useCart();
   const { user } = useAuth();
@@ -16,19 +18,33 @@ export default function Checkout() {
   const [name, setName] = useState(user?.name || "");
   const [shipping, setShipping] = useState("envio");
   const [address, setAddress] = useState("");
+  const [province, setProvince] = useState("");
+  const [shipCost, setShipCost] = useState(0);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (shipping === "retiro") { setShipCost(0); return; }
+    api.post("/shipping/quote", { province, subtotal: total }).then((r) => {
+      const envio = (r.data.options || []).find((o) => o.method === "envio");
+      setShipCost(envio ? envio.cost : 0);
+    }).catch(() => setShipCost(0));
+  }, [shipping, province, total]);
+
+  const grand = total + (shipping === "retiro" ? 0 : shipCost);
 
   if (items.length === 0) return <Navigate to="/carrito" replace />;
 
   const pay = async () => {
     if (!email || !name) return toast.error("Completá tu nombre y email");
     if (shipping === "envio" && !address.trim()) return toast.error("Ingresá una dirección de envío");
+    if (shipping === "envio" && !province) return toast.error("Elegí tu provincia");
     setBusy(true);
     try {
       const { data } = await api.post("/checkout", {
         items: items.map((i) => ({ product_id: i.product_id, size: i.size })),
         guest_email: email, guest_name: name,
         shipping_method: shipping, shipping_address: address,
+        shipping_province: province, shipping_cost: shipping === "retiro" ? 0 : shipCost,
       });
       if (data.demo) {
         navigate(`/checkout/demo/${data.order_id}`);
@@ -70,10 +86,19 @@ export default function Checkout() {
             </div>
           </div>
           {shipping === "envio" && (
-            <div>
-              <Label className="dossier-label text-[#6E675E]">Dirección</Label>
-              <Textarea data-testid="checkout-address" value={address} onChange={(e) => setAddress(e.target.value)} className="mt-2 bg-[#121212] border-[#2A2A2A] text-[#F5F4F0]" placeholder="Calle, número, localidad, provincia, CP" />
-            </div>
+            <>
+              <div>
+                <Label className="dossier-label text-[#6E675E]">Provincia</Label>
+                <select data-testid="checkout-province" value={province} onChange={(e) => setProvince(e.target.value)} className="mt-2 w-full h-10 px-3 rounded-md border bg-[#121212] border-[#2A2A2A] text-[#F5F4F0]">
+                  <option value="">Elegí tu provincia</option>
+                  {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label className="dossier-label text-[#6E675E]">Dirección</Label>
+                <Textarea data-testid="checkout-address" value={address} onChange={(e) => setAddress(e.target.value)} className="mt-2 bg-[#121212] border-[#2A2A2A] text-[#F5F4F0]" placeholder="Calle, número, localidad, CP" />
+              </div>
+            </>
           )}
         </div>
 
@@ -87,8 +112,15 @@ export default function Checkout() {
               </div>
             ))}
           </div>
-          <div className="flex justify-between text-[#F5F4F0] text-lg font-medium border-t border-[#2A2A2A] pt-3">
-            <span>Total</span><span>{formatARS(total)}</span>
+          <div className="flex justify-between text-[#A39B8E] text-sm border-t border-[#2A2A2A] pt-3">
+            <span>Subtotal</span><span>{formatARS(total)}</span>
+          </div>
+          <div className="flex justify-between text-[#A39B8E] text-sm mt-1">
+            <span>Envío{shipping === "retiro" ? " (retiro)" : province ? ` · ${province}` : ""}</span>
+            <span data-testid="checkout-shipping">{(shipping === "retiro" || shipCost === 0) ? "Gratis" : formatARS(shipCost)}</span>
+          </div>
+          <div className="flex justify-between text-[#F5F4F0] text-lg font-medium border-t border-[#2A2A2A] pt-3 mt-2">
+            <span>Total</span><span data-testid="checkout-total">{formatARS(grand)}</span>
           </div>
           <button data-testid="pay-button" onClick={pay} disabled={busy} className="btn-ink w-full py-4 mt-6 dossier-label disabled:opacity-60">
             {busy ? "Procesando…" : "Pagar con Mercado Pago"}

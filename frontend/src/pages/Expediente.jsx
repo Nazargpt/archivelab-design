@@ -6,6 +6,7 @@ import { ShoppingBag, ArrowLeft, Check } from "lucide-react";
 import api, { formatARS } from "@/lib/api";
 import { useCart } from "@/context/CartContext";
 import { WaitlistModal } from "@/components/WaitlistModal";
+import { setSeo } from "@/lib/seo";
 
 export default function Expediente() {
   const { id } = useParams();
@@ -23,7 +24,21 @@ export default function Expediente() {
       const avail = r.data.available_by_size || {};
       const firstAvail = (r.data.sizes || []).find((s) => (avail[s.label] || 0) > 0);
       if (firstAvail) setSize(firstAvail.label);
+      setSeo({
+        title: r.data.name,
+        description: (r.data.concept || "").slice(0, 160) || `${r.data.name} — pieza de archivo de ediciones limitadas.`,
+        image: r.data.images?.[0],
+        path: `/pieza-expediente/${r.data.id}`,
+        jsonld: {
+          "@context": "https://schema.org", "@type": "Product",
+          name: r.data.name, image: r.data.images || [],
+          description: r.data.concept || "", brand: { "@type": "Brand", name: "ARCHIVE LAB" },
+          sku: r.data.design_code,
+          ...(r.data.price != null ? { offers: { "@type": "Offer", price: r.data.price, priceCurrency: "ARS", availability: r.data.available_total > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock" } } : {}),
+        },
+      });
     }).catch(() => setNotfound(true));
+    return () => setSeo({});
   }, [id]);
 
   if (notfound) return <div className="py-32 text-center dossier-label text-[#8C857B]">Pieza no encontrada</div>;
