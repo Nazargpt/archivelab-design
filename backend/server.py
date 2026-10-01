@@ -56,6 +56,7 @@ EMAIL_BASE_URL = "https://integrations.emergentagent.com"
 EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY")
 EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "ARCHIVE LAB")
 EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO")
+SELLER_EMAIL = os.environ.get("SELLER_EMAIL", "camila@archivelab.design")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("archivelab")
@@ -684,12 +685,14 @@ async def mark_order_paid(order_id: str, payment_info: dict):
     if order.get("kind") == "event":
         await db.event_registrations.update_many({"order_id": order_id}, {"$set": {"status": "pagada"}})
         await send_order_email(order, kind="event")
+        await send_seller_email(order, kind="event")
         return
     for li in order.get("items", []):
         await db.units.update_one({"id": li["unit_id"]}, {"$set": {
             "status": "vendida", "reserved_until": None, "order_id": order_id},
             "$push": {"history": {"at": iso(now_utc()), "action": "vendida", "order_id": order_id}}})
     await send_order_email(order, kind="pieces")
+    await send_seller_email(order, kind="pieces")
 
 
 async def send_order_email(order: dict, kind: str):
@@ -732,6 +735,68 @@ async def send_order_email(order: dict, kind: str):
          "En Mi Archivo vas a encontrar la ficha digital y el certificado descargable de cada pieza."],
         "Ver Mi Archivo", f"{APP_BASE_URL}/mi-archivo")
     await send_email(to=to, subject="Tu pieza entró al archivo · ARCHIVE LAB", html=html)
+
+
+def _seller_shell(title: str, lines: list, cta_label: str = "", cta_url: str = "") -> str:
+    inner = "".join(f'<p style="margin:0 0 14px;color:#3a3a3a;font-size:15px;line-height:1.6">{l}</p>' for l in lines)
+    cta = ""
+    if cta_label and cta_url:
+        cta = (f'<p style="margin:22px 0"><a href="{escape(cta_url)}" style="background:#111;color:#fff;'
+               f'text-decoration:none;padding:12px 24px;font-size:13px;letter-spacing:.12em;'
+               f'text-transform:uppercase;display:inline-block">{escape(cta_label)}</a></p>')
+    return (f'<table role="presentation" width="100%" style="background:#f6f5f2;padding:28px 0">'
+            f'<tr><td align="center"><table role="presentation" width="520" style="background:#fff;'
+            f'border:1px solid #e6e2dd"><tr><td style="padding:32px;font-family:Arial,Helvetica,sans-serif">'
+            f'<p style="margin:0 0 20px;font-size:22px;font-weight:800;letter-spacing:-.02em">ARCHIVE <span style="font-style:italic;font-weight:400">lab</span></p>'
+            f'<h1 style="margin:0 0 18px;font-size:20px;color:#111">{escape(title)}</h1>'
+            f'{inner}{cta}'
+            f'<p style="margin:26px 0 0;font-size:11px;color:#999;border-top:1px solid #eee;padding-top:14px">'
+            f'Aviso interno de ventas · ARCHIVE LAB. No compartas este correo.</p>'
+            f'</td></tr></table></td></tr></table>')
+
+
+async def send_seller_email(order: dict, kind: str):
+    if not SELLER_EMAIL:
+        return
+    buyer_name = order.get("guest_name") or "—"
+    buyer_email = order.get("guest_email") or "—"
+    total = formatARS_py(order.get("total", 0))
+    order_id = order.get("id", "")
+    rows = ""
+    for i in order.get("items", []):
+        if kind == "event":
+            rows += (f'<tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#111;font-size:14px">'
+                     f'{escape(i.get("name",""))}</td></tr>')
+        else:
+            rows += (f'<tr><td style="padding:10px 0;border-bottom:1px solid #eee">'
+                     f'<div style="color:#111;font-size:15px;font-weight:bold">{escape(i.get("name",""))}</div>'
+                     f'<div style="color:#666;font-size:12px;margin-top:3px">Talle {escape(str(i.get("size","")))}'
+                     f' · ejemplar Nº {escape(str(i.get("edition_number","")))}'
+                     f' · código {escape(str(i.get("unit_code","")))}</div></td></tr>')
+    lines = [
+        f"Nuevo pedido confirmado (pago acreditado). Pedido <b>{escape(order_id)}</b>.",
+        f"<b>Comprador:</b> {escape(buyer_name)} · {escape(buyer_email)}",
+        f'<table style="width:100%;border-collapse:collapse">{rows}</table>',
+    ]
+    if kind == "event":
+        lines.append(f"<b>Tipo:</b> Entradas a evento")
+    else:
+        method = order.get("shipping_method") or "—"
+        if method == "retiro":
+            lines.append("<b>Envío:</b> Retiro en persona")
+        else:
+            addr = order.get("shipping_address") or "—"
+            prov = order.get("shipping_province") or "—"
+            carrier = order.get("carrier") or "—"
+            lines.append(f"<b>Envío:</b> a domicilio")
+            lines.append(f"<b>Dirección:</b> {escape(str(addr))}")
+            lines.append(f"<b>Provincia:</b> {escape(str(prov))} · <b>Transportista:</b> {escape(str(carrier))}")
+    sub = formatARS_py(order.get("subtotal", 0))
+    ship = formatARS_py(order.get("shipping_cost", 0))
+    lines.append(f"<b>Subtotal:</b> {escape(sub)} · <b>Envío:</b> {escape(ship)} · <b>Total:</b> {escape(total)}")
+    title = "Nueva venta de entradas" if kind == "event" else "Nueva venta de pieza"
+    html = _seller_shell(title, lines, "Ver en el panel", f"{APP_BASE_URL}/admin")
+    await send_email(to=SELLER_EMAIL, subject=f"🛒 Nuevo pedido {order_id} · ARCHIVE LAB", html=html)
 
 
 async def send_shipment_email(order: dict):

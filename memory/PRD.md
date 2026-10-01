@@ -35,3 +35,6 @@ Plataforma editorial y de e-commerce para ARCHIVE LAB (Camila "Cami" Guerra, Bue
 
 ## Credenciales de prueba
 Ver `/app/memory/test_credentials.md` (admin camila@archivelab.design / Archive2026!, clienta cliente@test.com / Cliente123!).
+
+## Changelog
+- 2026-06: Aviso al vendedor — al confirmarse el pago (`mark_order_paid`), se envía email a Camila (`SELLER_EMAIL`=camila@archivelab.design) con comprador, piezas/códigos y datos de envío (método, dirección, provincia, transportista) + subtotal/envío/total. Aplica a piezas y eventos. Función `send_seller_email` en server.py. En preview la clave Resend test bloquea entrega a direcciones reales (422 undeliverable); funciona en producción con dominio verificado. Casilla configurable vía env `SELLER_EMAIL`.
