@@ -19,6 +19,7 @@ export default function ProductEditor({ product, onClose, onSaved }) {
   const [f, setF] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [wlVersion, setWlVersion] = useState(0);
   const fileRef = useRef();
   const videoRef = useRef();
   const token = localStorage.getItem("archive_token");
@@ -146,8 +147,8 @@ export default function ProductEditor({ product, onClose, onSaved }) {
               </div>
             </div>
 
-            {product?.id && <UnitsManager productId={product.id} designCode={f.design_code} token={token} />}
-            {product?.id && <ProductWaitlist productId={product.id} />}
+            {product?.id && <UnitsManager productId={product.id} designCode={f.design_code} token={token} onWaitlistNotified={() => setWlVersion((v) => v + 1)} />}
+            {product?.id && <ProductWaitlist productId={product.id} version={wlVersion} />}
           </div>
 
           <div className="flex gap-3 p-5 border-t border-[#1C1C1C] sticky bottom-0 bg-[#0E0E0E]">
@@ -160,7 +161,7 @@ export default function ProductEditor({ product, onClose, onSaved }) {
   );
 }
 
-function UnitsManager({ productId, designCode, token }) {
+function UnitsManager({ productId, designCode, token, onWaitlistNotified }) {
   const [units, setUnits] = useState([]);
   const [size, setSize] = useState("1");
   const [qty, setQty] = useState(1);
@@ -170,8 +171,18 @@ function UnitsManager({ productId, designCode, token }) {
   useEffect(() => { load(); }, [productId]);
 
   const gen = async () => {
-    try { await api.post(`/admin/products/${productId}/units`, { size, quantity: Number(qty), color: "" }); toast.success("Unidades generadas"); load(); }
-    catch (e) { toast.error(errMsg(e)); }
+    try {
+      await api.post(`/admin/products/${productId}/units`, { size, quantity: Number(qty), color: "" });
+      toast.success("Unidades generadas");
+      load();
+      const { data: wl } = await api.get(`/admin/products/${productId}/waitlist`);
+      const pending = (wl || []).filter((w) => !w.notified).length;
+      if (pending > 0 && window.confirm(`Repusiste stock. Hay ${pending} persona(s) en la lista de espera sin avisar. ¿Les avisamos ahora por email que la pieza volvió?`)) {
+        const { data } = await api.post(`/admin/products/${productId}/notify`);
+        toast.success(`Avisadas: ${data.sent}`);
+        onWaitlistNotified && onWaitlistNotified();
+      }
+    } catch (e) { toast.error(errMsg(e)); }
   };
   const changeStatus = async (u, status) => {
     try { await api.put(`/admin/units/${u.id}`, { status, note: "cambio manual" }); load(); } catch (e) { toast.error(errMsg(e)); }
@@ -222,10 +233,10 @@ function UnitsManager({ productId, designCode, token }) {
   );
 }
 
-function ProductWaitlist({ productId }) {
+function ProductWaitlist({ productId, version }) {
   const [wl, setWl] = useState([]);
   const load = () => api.get(`/admin/products/${productId}/waitlist`).then((r) => setWl(r.data)).catch(() => {});
-  useEffect(() => { load(); }, [productId]);
+  useEffect(() => { load(); }, [productId, version]);
   const pending = wl.filter((w) => !w.notified).length;
   const notify = async () => {
     if (!window.confirm(`¿Avisar por email a ${pending} persona(s) que todavía no contactaste que la pieza volvió?`)) return;
