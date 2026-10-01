@@ -11,7 +11,7 @@ if not BASE_URL:
             if line.startswith('REACT_APP_BACKEND_URL='):
                 BASE_URL = line.split('=', 1)[1].strip().strip('"').rstrip('/')
 
-ADMIN_EMAIL = "camila@archivelab.fashion"
+ADMIN_EMAIL = "camila@archivelab.design"
 ADMIN_PASSWORD = "Archive2026!"
 CUSTOMER_EMAIL = "cliente@test.com"
 CUSTOMER_PASSWORD = "Cliente123!"

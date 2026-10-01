@@ -32,7 +32,7 @@ export default function Certificate() {
           <Row l="Creadora" v={u.creator} />
         </div>
         <div className="mt-10 pt-6 border-t border-[#2A2A2A] text-center">
-          <div className="dossier-label text-[#8C857B]">Escaneá el código único en archivelab para ver el registro</div>
+          <div className="dossier-label text-[#8C857B]">Escaneá el código único en archivelab.design para ver el registro</div>
           <div className="font-mono2 text-xs mt-2">{window.location.origin}/pieza/{u.unit_code}</div>
         </div>
       </div>

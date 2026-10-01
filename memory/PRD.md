@@ -30,9 +30,9 @@ Plataforma editorial y de e-commerce para ARCHIVE LAB (Camila "Cami" Guerra, Bue
 - P1 Archivo histórico de ediciones agotadas con su historia.
 - P1 Próximas liberaciones + listas de espera / suscripción a novedades.
 - P2 Certificados/fichas descargables en PDF enriquecido.
-- P2 Mercado Pago a producción + verificación de dominio archivelab.fashion.
+- P2 Mercado Pago a producción + verificación de dominio archivelab.design.
 - P2 Integración de transportista (Andreani/OCA/Correo) y emails transaccionales (Resend).
 - P3 Escalar release_expired() a TTL/background task.
 
 ## Credenciales de prueba
-Ver `/app/memory/test_credentials.md` (admin camila@archivelab.fashion / Archive2026!, clienta cliente@test.com / Cliente123!).
+Ver `/app/memory/test_credentials.md` (admin camila@archivelab.design / Archive2026!, clienta cliente@test.com / Cliente123!).

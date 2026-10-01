@@ -17,7 +17,7 @@ if not BASE_URL:
     except Exception:
         pass
 
-ADMIN_EMAIL = "camila@archivelab.fashion"
+ADMIN_EMAIL = "camila@archivelab.design"
 ADMIN_PASSWORD = "Archive2026!"
 CUSTOMER_EMAIL = "cliente@test.com"
 CUSTOMER_PASSWORD = "Cliente123!"
