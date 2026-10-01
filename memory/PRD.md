@@ -23,12 +23,11 @@ Plataforma editorial y de e-commerce para ARCHIVE LAB (Camila "Cami" Guerra, Bue
 ## Implementado (2026-06)
 - [x] Fase 1 MVP completa: inicio editorial con video de marca, archivo con filtros, expediente, 4 zonas, VIP con gating, carrito/checkout/Mercado Pago demo, código único + ficha pública/QR, Mi Archivo + certificado, panel admin completo, legales configurables.
 - [x] Datos demo seedeados (DNM01, INT01, CAR01, CG01 VIP, VST01 sin precio) con unidades.
-- [x] Eventos y Entradas (Fase 2 parcial): admin crea/edita eventos (desfile/lanzamiento/exposición/presentación), control de cupos, inscripción gratuita y compra de entrada con el mismo pago (Mercado Pago demo). Vista pública /eventos, "Mis eventos" en Mi Archivo, inscriptas por evento en el panel.
-- [x] Testing e2e: 35/35 backend MVP + 12/12 eventos, 100% flujos frontend críticos.
+- [x] Eventos y Entradas (Fase 2): admin crea/edita eventos, control de cupos, inscripción gratuita y compra de entrada con el mismo pago (Mercado Pago demo). Vista pública /eventos, "Mis eventos" en Mi Archivo.
+- [x] Fase 2 completa: Archivo histórico (solapa en /archivo con ediciones agotadas/archivadas y "avisame si vuelve"); Próximas liberaciones (/liberaciones) con lista de espera (email+nombre+talle+consentimiento); ficha/certificado descargable en PDF (reportlab, con QR); emails reales con Resend (gestionado por Emergent) para confirmación de lista de espera y avisos de novedades (liberación/vuelta de pieza) desde el panel.
+- [x] Testing e2e: MVP 35/35 + eventos 12/12 + fase 2 23/23 backend; frontend verificado (bug de Mi Archivo mezclando eventos/piezas, corregido).
 
 ## Backlog (próximas fases)
-- P1 Archivo histórico de ediciones agotadas con su historia.
-- P1 Próximas liberaciones + listas de espera / suscripción a novedades.
 - P2 Certificados/fichas descargables en PDF enriquecido.
 - P2 Mercado Pago a producción + verificación de dominio archivelab.design.
 - P2 Integración de transportista (Andreani/OCA/Correo) y emails transaccionales (Resend).

@@ -1,0 +1,38 @@
+{
+  "summary": "Phase 2 features (histórico, releases, waitlist, PDF certificate, email notify, admin RBAC/CRUD) tested end-to-end. Backend: 23/23 pytest cases pass (historic filter returns only sold-out editions incl. DNM03 and excludes VST01 prototype; GET /api/releases returns 2 seeded published releases with waitlist_count; POST /releases/{id}/waitlist and /products/{id}/waitlist create entries + fire email, enforce consent (400), duplicate (400) and 404; admin releases CRUD (list/create/update/add-wl/notify/delete) all 200; admin waitlist GET returns inscriptos; notify returns {sent:int}; RBAC 401/403 on all admin endpoints; GET /api/certificate/{unit_code}/pdf returns 200 application/pdf with %PDF header and 404 for bogus code; existing MVP + events tests still green). Frontend: /liberaciones renders 2 release-card tiles, release-waitlist-{id} opens waitlist-modal with name/email/size/consent inputs; submit without consent keeps modal open (error shown); with consent → toast '¡Listo! Estás en la lista' and modal closes. /archivo?view=historico shows Histórico tab active, DNM03 historic-card plus historic-waitlist-{id} button that opens WaitlistModal. Admin /admin → admin-tab-liberaciones lists 2 releases with release-wl-{id} and release-notify-{id} actions; new-release-button opens release-editor with rel-title/rel-status/rel-save. /certificado/{code} renders download-pdf button pointing to /api/certificate/{code}/pdf. Resend emails hit the Emergent provider (observed 202/ok on first calls; later 429 under heavy test rate limiting — not a code bug).",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "POST /api/admin/releases/{id}/notify", "issue": "Repeated test runs eventually get 429 from Emergent email provider so {sent} drops to 0. Endpoint still returns 200 and contract is correct. Consider a small retry/backoff or batching if a release has a large waitlist."}
+  ]},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "MiArchivo.jsx", "issue": "Mis piezas incluye items de órdenes kind='event' porque no filtra por kind. Resultado: tarjetas con unit_code undefined, data-testid 'pdf-undefined' y href /api/certificate/undefined/pdf (404). También dispara el warning 'Each child in a list should have a unique key prop' porque pc.unit_id es undefined para entradas de eventos.", "selector": "[data-testid^='pdf-']", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2.py",
+    "/app/test_reports/pytest/phase2_results.xml"
+  ],
+  "action_items": [
+    "MiArchivo.jsx: filtrar por kind antes de armar `pieces` → `const paidOrders = orders.filter((o) => o.status === 'paid' && (o.kind || 'pieces') === 'pieces');` (o excluir explícitamente `o.kind === 'event'`). Esto corrige el link PDF roto, el data-testid y el warning de React key."
+  ],
+  "critical_code_review_comments": [
+    "server.py ya pasa de 1500 líneas; sigue sin dividirse en routers — refactor pendiente de iteraciones previas.",
+    "_notify_waitlist envía emails en serie dentro del endpoint HTTP; para listas grandes conviene mover a tarea en background (BackgroundTasks o cola) para evitar timeouts del admin.",
+    "WaitlistIn no valida formato de email ni longitud de name/size: podrían llegar strings vacíos; agregar validaciones Pydantic (EmailStr + min_length).",
+    "release list sort usa `created_at` string ISO; para releases del mismo instante el orden es indeterminado y rompió un test. Agregar un `tiebreaker` (id) o `release_at` secundario.",
+    "certificate_pdf no requiere auth (es público por diseño). Correcto si el `unit_code` oficia de token, pero el código es predecible (`AL-{DESIGN}-{nn}-{HEX4}`): considerar aumentar la entropía del sufijo o firmar la URL.",
+    "MiArchivo mezcla eventos y piezas en una misma estructura, lo cual produjo el bug — señal de que convendría tener endpoints separados `/my/pieces` y `/my/events` o un filtro server-side."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2.py (new)"
+  ],
+  "success_rate": {"backend": "100% (23/23 nuevos + regresión OK)", "frontend": "95% (bug HIGH en MiArchivo pdf link)"},
+  "test_credentials": "Admin camila@archivelab.design / Archive2026! · Customer cliente@test.com / Cliente123! · Resend safe email delivered+<tag>@resend.dev",
+  "seed_data_creation": "Los tests crean entradas de waitlist con emails únicos `delivered+<tag><run_id>@resend.dev` (no se limpian explícitamente). Un release TEST_Release_CRUD_v2 se crea y se elimina dentro del mismo flujo. UI test añadió una entrada 'delivered+ui@resend.dev' en la primera liberación (seguro borrarla).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "El único bug encontrado es un filtro faltante en /mi-archivo. Fix sugerido: filtrar paidOrders por kind !== 'event' antes del flatMap, o chequear pc.unit_code antes de renderizar. Después del fix basta con navegar como cliente@test.com, abrir /mi-archivo y verificar que todas las tarjetas tengan data-testid='pdf-AL-...' válido. Backend 100% verde con /app/backend/tests/test_phase2.py (pytest -p xdist -n0 recomendado por la deduplicación de waitlist). Resend puede devolver 429 transitorio si los tests se corren muchas veces seguidas — no es bug.",
+  "rca of the issue": "RCA UI bug: MiArchivo.jsx L31-32 hace `paidOrders = orders.filter(o=>o.status==='paid')` SIN excluir kind='event'. Luego `flatMap(o.items.map(...))` incluye los items de la orden de evento, que NO tienen unit_code/unit_id/edition_number. React renderiza <a href=`${API}/certificate/${pc.unit_code}/pdf`> → '/api/certificate/undefined/pdf' que responde 404; data-testid resulta 'pdf-undefined' y la key del <div> es undefined (warning de React). Mitigación: `const paidOrders = orders.filter(o => o.status==='paid' && o.kind !== 'event');` ó `pieces = paidOrders.flatMap(o => (o.items||[]).filter(i=>i.unit_code).map(...))`."
+}

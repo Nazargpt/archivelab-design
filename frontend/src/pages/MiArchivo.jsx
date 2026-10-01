@@ -28,8 +28,8 @@ export default function MiArchivo() {
     } catch (e) { toast.error(errMsg(e)); }
   };
 
-  const paidOrders = orders.filter((o) => o.status === "paid");
-  const pieces = paidOrders.flatMap((o) => o.items.map((i) => ({ ...i, order: o })));
+  const paidOrders = orders.filter((o) => o.status === "paid" && (o.kind || "pieces") !== "event");
+  const pieces = paidOrders.flatMap((o) => (o.items || []).filter((i) => i.unit_code).map((i) => ({ ...i, order: o })));
 
   return (
     <div className="px-4 sm:px-8 lg:px-16 py-12 lg:py-16 max-w-5xl mx-auto">
