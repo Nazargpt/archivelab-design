@@ -1,0 +1,25 @@
+{
+  "summary": "Events & tickets feature tested end-to-end on top of ARCHIVE LAB MVP. Backend: 12/12 pytest cases pass (public events listing with registered_count/spots_left/sold_out, free register, duplicate 400, paid register creates kind='event' order + demo approve → registration 'pagada', capacity enforcement 409, /api/my/events auth 401 + authenticated results, admin RBAC 401/403/200, admin events CRUD, delete-with-paid blocked 400, pieces checkout regression still OK). Frontend: /eventos renders 2 seeded cards, 'ANOTARME' opens event-register-modal and shows '¡Listo! Quedaste anotada' toast; 'COMPRAR ENTRADA' navigates to /checkout/demo/{order_id}, demo-approve-button → /payment-result shows 'ENTRADA CONFIRMADA'. Admin /admin eventos tab lists events, event-regs-{id} opens Inscriptas modal, new-event-button opens event-editor with ev-title/ev-type/ev-price/ev-save present. Mi Archivo shows 'MIS EVENTOS' section with my-event-{id} card status ANOTADA.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_events.py",
+    "/app/test_reports/pytest/events_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "event_public() computes registered_count via count_documents on every list/get call; cache or denormalize for scale, but fine for MVP.",
+    "mark_order_paid() for kind='event' doesn't notify the customer (no email/webhook). Acceptable for demo mode but worth adding later.",
+    "Admin DELETE /api/admin/events with paid tickets returns 400 but doesn't offer a 'force archive' option; UX hint in the error message is good.",
+    "server.py now ~1000 lines; splitting into routers (auth, catalog, checkout, events, admin) would improve maintainability.",
+    "No endpoint to CANCEL/REFUND an event registration — once 'pagada', only option is leaving it. For MVP OK."
+  ],
+  "updated_files": ["/app/backend/tests/test_events.py (new)"],
+  "success_rate": {"backend": "100% (12/12 events + 35/35 prior)", "frontend": "100% of event flows"},
+  "test_credentials": "Admin: camila@archivelab.fashion / Archive2026! ; Customer: cliente@test.com / Cliente123!",
+  "seed_data_creation": "Seed produces 2 events on startup (presentacion free capacity 25, desfile 18000 ARS capacity 40). Tests created ad-hoc events prefixed TEST_capacity_*/TEST_crud_* and TEST_* email registrations. TEST_crud_* event remains in DB in status='draft' (cannot delete due to a paid registration created by its own test, which is the expected 400 behaviour) — hidden from public /eventos.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Events feature fully wired. Public /eventos uses data-testid event-card-{id}, event-register-{id}, event-register-modal, event-name, event-email, event-confirm. Payment result page uses CSS text-transform:uppercase so the string 'Entrada confirmada' is rendered as 'ENTRADA CONFIRMADA' — check case-insensitive. Running the CRUD test leaves one TEST_crud_* draft event with a paid registration behind by design (proves delete-with-paid guard). If re-running capacity test it will create+delete its own events. Backend MP_ACCESS_TOKEN still empty → demo mode is intentional.",
+  "rca of the issue": "No bugs found. One cosmetic gotcha: payment-result renders 'ENTRADA CONFIRMADA' uppercase via CSS; initial exact-match substring assertion for 'Entrada confirmada' failed but the DOM is correct — screenshot confirmed."
+}

@@ -23,10 +23,10 @@ Plataforma editorial y de e-commerce para ARCHIVE LAB (Camila "Cami" Guerra, Bue
 ## Implementado (2026-06)
 - [x] Fase 1 MVP completa: inicio editorial con video de marca, archivo con filtros, expediente, 4 zonas, VIP con gating, carrito/checkout/Mercado Pago demo, código único + ficha pública/QR, Mi Archivo + certificado, panel admin completo, legales configurables.
 - [x] Datos demo seedeados (DNM01, INT01, CAR01, CG01 VIP, VST01 sin precio) con unidades.
-- [x] Testing e2e: 35/35 backend, 100% flujos frontend críticos.
+- [x] Eventos y Entradas (Fase 2 parcial): admin crea/edita eventos (desfile/lanzamiento/exposición/presentación), control de cupos, inscripción gratuita y compra de entrada con el mismo pago (Mercado Pago demo). Vista pública /eventos, "Mis eventos" en Mi Archivo, inscriptas por evento en el panel.
+- [x] Testing e2e: 35/35 backend MVP + 12/12 eventos, 100% flujos frontend críticos.
 
 ## Backlog (próximas fases)
-- P1 Eventos (desfiles/lanzamientos) con inscripción y compra de entradas.
 - P1 Archivo histórico de ediciones agotadas con su historia.
 - P1 Próximas liberaciones + listas de espera / suscripción a novedades.
 - P2 Certificados/fichas descargables en PDF enriquecido.
