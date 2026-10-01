@@ -1274,7 +1274,7 @@ async def seed_demo():
     if await db.products.count_documents({}) > 0:
         return
     base = APP_BASE_URL
-    img = lambda pid: f"https://images.unsplash.com/photo-{pid}?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400"
+    img = lambda pid: f"{base}/catalog/{pid}.jpg"
     brand = lambda n: f"{base}/brand/img{n}.jpeg"
     demo = [
         {"design_code": "DNM01", "name": "Campera Intervenida 001", "category": "denim",
@@ -1338,7 +1338,7 @@ async def seed_demo():
          "sizes": [{"label": "1", "measurements": "Busto 82"},
                    {"label": "2", "measurements": "Busto 86"},
                    {"label": "3", "measurements": "Busto 90"}],
-         "images": [img("1716652841447-df18e7a026a8"), img("1618902751861-3de78572c067")],
+         "images": [img("1618902751861-3de78572c067"), img("1579071072964-395e8239d579")],
          "video": None, "status": "published"},
         {"design_code": "ACC01", "name": "Guantes Intervenidos", "category": "accesorios",
          "edition_name": "Liberación I", "edition_total": 12, "price": 34000.0,
@@ -1459,7 +1459,7 @@ async def seed_events():
     if await db.events.count_documents({}) > 0:
         return
     base = APP_BASE_URL
-    img = lambda pid: f"https://images.unsplash.com/photo-{pid}?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400"
+    img = lambda pid: f"{base}/catalog/{pid}.jpg"
     evs = [
         {"title": "Liberación I — Desfile de apertura", "type": "desfile",
          "description": "Presentación en vivo de la primera liberación del archivo. Cupos limitados, con entrada.",
@@ -1532,7 +1532,7 @@ async def seed_content():
 async def seed_releases():
     if await db.releases.count_documents({}) > 0:
         return
-    img = lambda pid: f"https://images.unsplash.com/photo-{pid}?crop=entropy&cs=srgb&fm=jpg&q=85&w=1400"
+    img = lambda pid: f"{APP_BASE_URL}/catalog/{pid}.jpg"
     rels = [
         {"title": "Liberación II — Denim de noche", "description": "La próxima serie de denim intervenido, en tonos profundos. Pocas unidades, sin reposición. Anotate para acceder antes que nadie.",
          "image": img("1699379012687-7da0cd15f3cb"), "teaser_date": "Próximamente", "status": "published"},
