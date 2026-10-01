@@ -1,0 +1,89 @@
+{
+  "project_name": "ARCHIVE LAB — Camila Guerra",
+  "brand_identity": {
+    "designer": "Camila Guerra ('Cami Guerra')",
+    "origin": "Buenos Aires, Argentina",
+    "concept": "Museum of Archive Fashion Pieces / Laboratorio de Piezas de Autor",
+    "brand_flow": "ARCHIVO → PIEZA → EXPEDIENTE → EDICIÓN → LIBERACIÓN → ADQUISICIÓN",
+    "emotional_archetype": "LUXURY_RAW_EDITORIAL",
+    "tone_of_voice": "Argentine Spanish with voseo (segura, auténtica, sensual, rebelde, cercana, estética de museo y laboratorio)",
+    "key_phrases": [
+      "Construí tu propio archivo",
+      "Una pieza puede cambiarlo todo",
+      "No necesitás más ropa. Necesitás mejores piezas.",
+      "No todo el mundo puede tenerla."
+    ],
+    "logo_concept": "ARCHIVE in bold brutalist display typeface + 'lab' in fluid handwritten cursive script"
+  },
+  "typography": {
+    "heading_font": "Syne / Bodoni Moda / Cabinet Grotesk (Display Brutalist Serif/Sans mix)",
+    "body_font": "Plus Jakarta Sans / Inter",
+    "script_font": "Caveat / Dancing Script (for 'lab' logo handwritten touch and designer notes)",
+    "mono_font": "JetBrains Mono (for Dossier / Expediente numbers, QR codes, limited edition serials)",
+    "font_pairing_rules": "Headings in bold uppercase with tight letter-spacing (tracking-tight or tracking-tighter). Overlines & Dossier references in Mono uppercase with wide tracking (tracking-[0.2em]). Hand-written accents for Cami's signatures and 'lab' sub-logo.",
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl font-black uppercase tracking-tight leading-none",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl font-bold uppercase tracking-tight",
+      "h3": "text-xl sm:text-2xl font-semibold uppercase tracking-snug",
+      "dossier_label": "font-mono text-xs uppercase tracking-[0.25em] text-neutral-400",
+      "body": "text-sm sm:text-base leading-relaxed text-neutral-300"
+    }
+  },
+  "color_palette": {
+    "theme": "DARK_EDITORIAL_MONOCHROME",
+    "background_primary": "#0A0A0A",
+    "background_secondary": "#121212",
+    "surface_card": "#181818",
+    "surface_elevated": "#222222",
+    "border_subtle": "#2A2A2A",
+    "border_strong": "#404040",
+    "text_primary": "#F5F4F0",
+    "text_secondary": "#A39B8E",
+    "text_muted": "#6E675E",
+    "accent_warm_taupe": "#8C857B",
+    "accent_raw_bone": "#E6E2DD",
+    "accent_rebel_red": "#9E2A2B",
+    "badge_limited": "#1C241D",
+    "badge_limited_text": "#72B078"
+  },
+  "layout_and_spacing": {
+    "container_padding": "px-4 sm:px-8 lg:px-16 py-8 lg:py-16",
+    "grid_bento": "grid grid-cols-1 md:grid-cols-8 lg:grid-cols-12 gap-6 lg:gap-10",
+    "card_padding": "p-6 sm:p-8",
+    "hero_overlay": "bg-gradient-to-t from-[#0A0A0A] via-[#0A0A0A]/60 to-transparent",
+    "museum_frame": "border border-[#2A2A2A] relative bg-[#121212] transition-all duration-300 hover:border-[#555555]"
+  },
+  "key_sections_and_zones": {
+    "hero_editorial": "Impactful video/cinematic gallery backdrop with quiet ambient video, ARCHIVE lab logo, and main CTA 'EXPLORAR EL ARCHIVO'.",
+    "archive_catalog": "Catalog with filter by Category (Denim Intervenido, Íntima/Corsetería, Accesorios, Carteras/Bolsos), Size (Talle 1, 2, 3, Único), and Availability (Libre, Reservado, Agotado).",
+    "expediente_dossier": "Product Dossier modal/page featuring image gallery, Cami's concept notes, material interventions, measurements, total limited edition count, availability per size, and price in ARS.",
+    "vip_camila_guerra": "Exclusive section for ultra-limited pieces with direct Cami Guerra approval and restricted numbers.",
+    "cart_and_checkout": "Mercado Pago ARS mock integration with transparent summary, size selection, unit number reservation, and shipping options in Argentina.",
+    "my_archive_user_space": "Private area for client showing acquired pieces, unique serial codes, status, and printable digital certificates.",
+    "qr_public_dossier": "Public page accessible via QR/code showing piece authenticity, dossier details, and owner badge.",
+    "admin_panel": "Protected laboratory backroom for piece creation, dossier editing, unit serial generator, QR generator, and order management."
+  },
+  "image_urls": {
+    "hero_model_portrait": "https://images.unsplash.com/photo-1754315052701-0b98f6ba786b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwxfHxlZGl0b3JpYWwlMjBmYXNoaW9uJTIwbW9ub2Nocm9tZSUyMG1vZGVsJTIwcG9ydHJhaXQlMjBoYXV0ZSUyMGNvdXR1cmV8ZW58MHx8fHwxNzkwODc1Mzk2fDA&ixlib=rb-4.1.0&q=85",
+    "hero_sunglasses_model": "https://images.unsplash.com/photo-1754315036597-b85758a003de?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwzfHxlZGl0b3JpYWwlMjBmYXNoaW9uJTIwbW9ub2Nocm9tZSUyMG1vZGVsJTIwcG9ydHJhaXQlMjBoYXV0ZSUyMGNvdXR1cmV8ZW58MHx8fHwxNzkwODc1Mzk2fDA&ixlib=rb-4.1.0&q=85",
+    "denim_intervenido_jacket": "https://images.unsplash.com/photo-1638404390952-3a9442fbad15?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTV8MHwxfHNlYXJjaHwyfHxkYXJrJTIwYWVzdGhldGljJTIwZGVuaW0lMjBmYXNoaW9uJTIwamFja2V0JTIwdGV4dHVyZXMlMjBydW53YXl8ZW58MHx8fHwxNzkwODc1Mzk2fDA&ixlib=rb-4.1.0&q=85",
+    "denim_urban_street": "https://images.pexels.com/photos/12126460/pexels-photo-12126460.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+    "corseteria_intima": "https://images.unsplash.com/photo-1786205366335-6309a854962f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwyfHxmYXNoaW9uJTIwbW9kZWwlMjBkYXJrJTIwY29yc2V0fGVufDB8fHx8MTc5MDg3NTQwMXww&ixlib=rb-4.1.0&q=85",
+    "avant_garde_dress": "https://images.unsplash.com/photo-1779912217839-96eabe1de90b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwxfHxmYXNoaW9uJTIwbW9kZWwlMjBkYXJrJTIwY29yc2V0fGVufDB8fHx8MTc5MDg3NTQwMXww&ixlib=rb-4.1.0&q=85",
+    "leather_bag_accessories": "https://images.unsplash.com/photo-1603219527847-24c87f552a77?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHw0fHxsZWF0aGVyJTIwYmFnJTIwZmFzaGlvbiUyMGRhcmt8ZW58MHx8fHwxNzkwODc1NDAxfDA&ixlib=rb-4.1.0&q=85",
+    "crafting_tools_workshop": "https://images.unsplash.com/photo-1644258676710-ffb99d7d7a1b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHwzfHxsZWF0aGVyJTIwYmFnJTIwZmFzaGlvbiUyMGRhcmt8ZW58MHx8fHwxNzkwODc1NDAxfDA&ixlib=rb-4.1.0&q=85"
+  },
+  "instructions_to_main_agent": {
+    "testing_data_testids": "Ensure EVERY button, input, tab, card, modal, and link includes a data-testid attribute in kebab-case (e.g. data-testid='explore-archive-cta', data-testid='filter-category-denim', data-testid='add-to-cart-button').",
+    "header_navigation": "The header must feature the ARCHIVE lab logo (bold 'ARCHIVE' + handwritten italic 'lab'), navigation links to Archivo, Expedientes, Camila Guerra VIP, Mi Archivo, and Admin, plus search and cart trigger.",
+    "language_and_tone": "Use Argentine Spanish (voseo) across all copy: 'Explorá', 'Elegí tu talle', 'Guardá en tu archivo', 'Comprá con Mercado Pago'.",
+    "react_js_file_extension": "Note that the codebase uses standard .js / .jsx file extensions for React components."
+  },
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Dark editorial aesthetic: avoid generic white SaaS components or juvenile punk tropes.",
+    "Use layered z-index hierarchy and glassmorphism (backdrop-blur-xl bg-black/70 border border-white/10) for sticky elements and drawers.",
+    "Ensure interactive states have contrasting focus/hover borders and text highlights.",
+    "Include subtle motion using Framer Motion for dossier drawer reveals, photo zoom, and tab switching.",
+    "Provide clear feedback via Sonner toasts when adding items to cart or saving dossiers."
+  ]
+}

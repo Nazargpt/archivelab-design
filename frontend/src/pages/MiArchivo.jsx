@@ -1,0 +1,108 @@
+import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { toast } from "sonner";
+import { LogOut, Package, Plus } from "lucide-react";
+import api, { formatARS, errMsg } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { Input } from "@/components/ui/input";
+
+export default function MiArchivo() {
+  const { user, logout } = useAuth();
+  const [orders, setOrders] = useState([]);
+  const [claimId, setClaimId] = useState("");
+
+  const load = () => api.get("/my/orders").then((r) => setOrders(r.data)).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const claim = async () => {
+    if (!claimId.trim()) return;
+    try {
+      await api.post(`/orders/${claimId.trim()}/claim`);
+      toast.success("Pedido sumado a tu archivo");
+      setClaimId("");
+      load();
+    } catch (e) { toast.error(errMsg(e)); }
+  };
+
+  const paidOrders = orders.filter((o) => o.status === "paid");
+  const pieces = paidOrders.flatMap((o) => o.items.map((i) => ({ ...i, order: o })));
+
+  return (
+    <div className="px-4 sm:px-8 lg:px-16 py-12 lg:py-16 max-w-5xl mx-auto">
+      <div className="flex items-start justify-between mb-10">
+        <div>
+          <div className="dossier-label text-[#6E675E] mb-2">Miembro del archivo</div>
+          <h1 className="font-display font-extrabold uppercase tracking-tight text-4xl text-[#F5F4F0]">Mi Archivo</h1>
+          <p className="text-[#8C857B] mt-2">{user?.name} · {user?.email}</p>
+        </div>
+        <button data-testid="logout-button" onClick={logout} className="dossier-label text-[#8C857B] hover:text-[#9E2A2B] inline-flex items-center gap-2">
+          <LogOut size={14} /> Salir
+        </button>
+      </div>
+
+      {/* Pieces */}
+      <section className="mb-14">
+        <h2 className="font-display font-bold uppercase tracking-tight text-2xl text-[#F5F4F0] mb-5">Mis piezas</h2>
+        {pieces.length === 0 ? (
+          <div className="museum-frame p-10 text-center">
+            <Package className="mx-auto text-[#8C857B] mb-3" size={24} />
+            <p className="text-[#8C857B]">Todavía no tenés piezas en tu archivo.</p>
+            <Link to="/archivo" className="btn-ink px-6 py-3 dossier-label inline-flex mt-5">Explorar el archivo</Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {pieces.map((pc) => (
+              <div key={pc.unit_id} data-testid={`my-piece-${pc.unit_code}`} className="museum-frame overflow-hidden hover-lift">
+                <div className="aspect-[4/3] bg-[#161616] overflow-hidden">
+                  {pc.image && <img src={pc.image} alt={pc.name} className="w-full h-full object-cover" />}
+                </div>
+                <div className="p-4">
+                  <div className="dossier-label text-[#6E675E]">{pc.design_code} · talle {pc.size}</div>
+                  <h3 className="font-display font-bold uppercase tracking-tight text-[#F5F4F0]">{pc.name}</h3>
+                  <div className="dossier-label text-[#72B078] mt-2">{pc.unit_code}</div>
+                  <div className="dossier-label text-[#8C857B] mt-1">ejemplar Nº {pc.edition_number}</div>
+                  <div className="flex gap-3 mt-4">
+                    <Link to={`/pieza/${pc.unit_code}`} className="dossier-label text-[#8C857B] hover:text-[#F5F4F0]">ficha pública</Link>
+                    <Link to={`/certificado/${pc.unit_code}`} data-testid={`cert-${pc.unit_code}`} className="dossier-label text-[#E6E2DD] hover:text-white">certificado</Link>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Orders */}
+      <section className="mb-14">
+        <h2 className="font-display font-bold uppercase tracking-tight text-2xl text-[#F5F4F0] mb-5">Mis pedidos</h2>
+        {orders.length === 0 ? (
+          <p className="text-[#8C857B]">Sin pedidos todavía.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {orders.map((o) => (
+              <div key={o.id} className="museum-frame p-5 flex items-center justify-between">
+                <div>
+                  <div className="dossier-label text-[#6E675E]">{o.id}</div>
+                  <div className="text-[#A39B8E] text-sm mt-1">{o.items.length} pieza(s) · {formatARS(o.total)}</div>
+                </div>
+                <span className={`dossier-label px-3 py-1 ${o.status === "paid" ? "bg-[#1C241D] text-[#72B078]" : o.status === "created" ? "bg-[#2A2A2A] text-[#A39B8E]" : "bg-[#2A1515] text-[#c74446]"}`}>
+                  {o.status === "paid" ? "pagado" : o.status === "created" ? "pendiente" : o.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Claim */}
+      <section className="museum-frame p-6">
+        <div className="dossier-label text-[#6E675E] mb-2">Sumar un pedido de invitada</div>
+        <p className="text-sm text-[#8C857B] mb-4">¿Compraste sin iniciar sesión? Pegá el número de pedido para sumarlo a tu archivo (se verifica que el email coincida).</p>
+        <div className="flex gap-3">
+          <Input data-testid="claim-order-input" value={claimId} onChange={(e) => setClaimId(e.target.value)} placeholder="order_xxxxxxxx" className="bg-[#121212] border-[#2A2A2A] text-[#F5F4F0]" />
+          <button data-testid="claim-order-button" onClick={claim} className="btn-outline-ink px-5 dossier-label inline-flex items-center gap-2"><Plus size={14} /> Sumar</button>
+        </div>
+      </section>
+    </div>
+  );
+}
