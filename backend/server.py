@@ -1666,7 +1666,7 @@ async def admin_upload(file: UploadFile = File(...), admin=Depends(require_admin
                                "original_filename": file.filename, "content_type": file.content_type,
                                "size": result.get("size"), "is_deleted": False,
                                "created_at": iso(now_utc())})
-    return {"url": f"{APP_BASE_URL}/api/files/{result['path']}", "path": result["path"]}
+    return {"url": f"/api/files/{result['path']}", "path": result["path"]}
 
 @api.get("/files/{path:path}")
 async def serve_file(path: str):
@@ -1683,6 +1683,41 @@ async def root():
 # ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
+def _to_relative_asset(u):
+    if not isinstance(u, str) or not u or "://" not in u:
+        return u
+    for marker in ("/catalog/", "/brand/", "/uploads/", "/api/files/"):
+        i = u.find(marker)
+        if i > 0:
+            return u[i:]
+    return u
+
+
+async def normalize_asset_urls():
+    """Rewrite absolute asset URLs (pointing at a specific host) to relative paths so
+    images resolve against whatever origin serves the app (preview or production). Idempotent."""
+    changed = 0
+    async for p in db.products.find({}, {"_id": 0, "id": 1, "images": 1, "video": 1}):
+        imgs = [_to_relative_asset(x) for x in (p.get("images") or [])]
+        vid = _to_relative_asset(p.get("video"))
+        upd = {}
+        if imgs != (p.get("images") or []):
+            upd["images"] = imgs
+        if vid != p.get("video"):
+            upd["video"] = vid
+        if upd:
+            await db.products.update_one({"id": p["id"]}, {"$set": upd})
+            changed += 1
+    for coll in ("events", "releases"):
+        async for d in db[coll].find({}, {"_id": 0, "id": 1, "image": 1}):
+            rel = _to_relative_asset(d.get("image"))
+            if rel != d.get("image"):
+                await db[coll].update_one({"id": d["id"]}, {"$set": {"image": rel}})
+                changed += 1
+    if changed:
+        logger.info(f"Normalized asset URLs on {changed} documents")
+
+
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("email", unique=True)
@@ -1707,6 +1742,7 @@ async def startup():
     await seed_events()
     await seed_content()
     await seed_releases()
+    await normalize_asset_urls()
     try:
         init_storage()
         logger.info("Storage initialized")
@@ -1717,9 +1753,8 @@ async def startup():
 async def seed_demo():
     if await db.products.count_documents({}) > 0:
         return
-    base = APP_BASE_URL
-    img = lambda pid: f"{base}/catalog/{pid}.jpg"
-    brand = lambda n: f"{base}/brand/img{n}.jpeg"
+    img = lambda pid: f"/catalog/{pid}.jpg"
+    brand = lambda n: f"/brand/img{n}.jpeg"
     demo = [
         {"design_code": "DNM01", "name": "Campera 001 · Intervenida a Mano", "category": "denim",
          "edition_name": "Liberación I", "edition_total": 8, "price": 89000.0,
@@ -1733,7 +1768,7 @@ async def seed_demo():
                    {"label": "2", "measurements": "Hombro 42 · Busto 100 · Largo 60"},
                    {"label": "3", "measurements": "Hombro 44 · Busto 104 · Largo 62"}],
          "images": [img("1697924293303-34488b60bf36"), img("1741941171881-40832346c7fe"), img("1572122936109-ce84b9cd5439")],
-         "video": f"{base}/brand/hero.mp4", "status": "published"},
+         "video": "/brand/hero.mp4", "status": "published"},
         {"design_code": "DNM02", "name": "Jean Deconstruido · Expediente", "category": "denim",
          "edition_name": "Liberación I", "edition_total": 10, "price": 76000.0,
          "color": "Azul lavado", "vip": False,
@@ -1902,8 +1937,7 @@ async def seed_demo():
 async def seed_events():
     if await db.events.count_documents({}) > 0:
         return
-    base = APP_BASE_URL
-    img = lambda pid: f"{base}/catalog/{pid}.jpg"
+    img = lambda pid: f"/catalog/{pid}.jpg"
     evs = [
         {"title": "Liberación I — Desfile de apertura", "type": "desfile",
          "description": "Presentación en vivo de la primera liberación del archivo. Cupos limitados, con entrada.",
@@ -1911,7 +1945,7 @@ async def seed_events():
          "price": 18000.0, "capacity": 40, "status": "published"},
         {"title": "Visita al laboratorio — Expediente abierto", "type": "presentacion",
          "description": "Recorrido por el proceso detrás de las piezas: intervenciones, materiales y archivo. Entrada libre con inscripción previa.",
-         "date": "A confirmar", "location": "Buenos Aires (a confirmar)", "image": f"{base}/brand/img2.jpeg",
+         "date": "A confirmar", "location": "Buenos Aires (a confirmar)", "image": "/brand/img2.jpeg",
          "price": None, "capacity": 25, "status": "published"},
         {"title": "Liberación II — Acceso anticipado para miembros", "type": "lanzamiento",
          "description": "Preview exclusivo de la próxima liberación para miembros del archivo. Entrada libre con inscripción.",
@@ -1976,7 +2010,7 @@ async def seed_content():
 async def seed_releases():
     if await db.releases.count_documents({}) > 0:
         return
-    img = lambda pid: f"{APP_BASE_URL}/catalog/{pid}.jpg"
+    img = lambda pid: f"/catalog/{pid}.jpg"
     rels = [
         {"title": "Liberación II — Denim de noche", "description": "La próxima serie de denim intervenido, en tonos profundos. Pocas unidades, sin reposición. Anotate para acceder antes que nadie.",
          "image": img("1699379012687-7da0cd15f3cb"), "teaser_date": "Próximamente", "status": "published"},
