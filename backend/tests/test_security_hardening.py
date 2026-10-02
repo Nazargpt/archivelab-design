@@ -86,18 +86,17 @@ class TestAuth:
         assert statuses[5] == 429, f"expected 6th=429, got {statuses[5]}"
 
     def test_brute_force_lockout_public_rca(self):
-        """RCA: through public URL, k8s ingress distributes across multiple
-        source IPs; server uses request.client.host (proxy IP), not
-        X-Forwarded-For, so lockout can be bypassed. Documented, not asserted."""
-        bf_email = f"bruteforce-{uuid.uuid4().hex[:8]}@test.com"
+        """RETEST (iter7): with X-Forwarded-For parsing + per-email limiter,
+        the 6th wrong-password attempt via the PUBLIC URL must return 429."""
+        bf_email = f"retest-brute-{uuid.uuid4().hex[:8]}@test.com"
         s = requests.Session()
         s.headers.update({"Content-Type": "application/json"})
         statuses = [s.post(f"{API}/auth/login",
                            json={"email": bf_email, "password": "wrongpass"}).status_code
                     for _ in range(6)]
         print(f"brute-force (public URL, 6 attempts): {statuses}")
-        # Soft check: lockout should kick in sometimes; just assert first attempts are 401
-        assert all(s in (401, 429) for s in statuses)
+        assert statuses[:5] == [401] * 5, f"expected first 5=401, got {statuses}"
+        assert statuses[5] == 429, f"expected 6th=429 via public URL, got {statuses}"
 
 
 # -------- order endpoint redaction --------

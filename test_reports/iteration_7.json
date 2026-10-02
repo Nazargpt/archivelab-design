@@ -1,0 +1,31 @@
+{
+  "summary": "RETEST of iter6 HIGH security finding (brute-force lockout bypass behind k8s ingress). The fix in /app/backend/server.py login() now derives client IP from X-Forwarded-For (first entry) -> X-Real-IP -> request.client.host, AND adds a second limiter keyed by email alone (threshold 10) on top of the per-IP+email limiter (threshold 5), both locking for 15 minutes and clearing on successful login. Updated test_brute_force_lockout_public_rca to assert the 6th response is 429 via the PUBLIC URL. Full re-run of /app/backend/tests/test_security_hardening.py: 14/14 PASS. Regression items from iter6 (order PII redaction for anon/other-user, full for owner/admin, /api/my/orders scoped by user_id, demo approve, CORS) all still pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verification_details": {
+    "brute_force_public_fixed": "POST /api/auth/login x6 with wrong password for retest-brute-*@test.com via REACT_APP_BACKEND_URL returned [401,401,401,401,401,429]. Previously (iter6) stayed 401x6 due to request.client.host round-robining across ingress pod IPs.",
+    "brute_force_localhost": "Still 401,401,401,401,401,429 via http://localhost:8001.",
+    "valid_login_unaffected": "cliente@test.com/Cliente123! and camila@archivelab.design/Archive2026! both return 200 with correct role; successful login clears both counters.",
+    "order_pii_redaction": "GET /api/orders/{id} anon/non-owner returns only {id,status,kind,total,currency,items[name,unit_code,size,edition_number]} — no guest_email/guest_name/shipping_address/payment. Owner & admin get full order.",
+    "my_orders_scoping": "GET /api/my/orders returns only orders where user_id == me.id; guest checkout using logged user's email does NOT appear.",
+    "demo_approve": "POST /api/demo/approve/{id} still returns 200 and status becomes 'paid' in current MP_MODE=test.",
+    "cors": "Allowed origin reflected on GET; unknown origin not echoed."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_security_hardening.py",
+    "/app/test_reports/pytest/iter7_security.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:566-568 — IP extraction now correctly honors X-Forwarded-For/X-Real-IP. If ingress ever becomes untrusted, consider restricting to a trusted proxy list, but for current single-ingress k8s this is fine.",
+    "server.py:582-589 — reset of count to 0 after setting locked_until means lock survives 15min; subsequent lock extensions require 5 (or 10) more fails — acceptable.",
+    "Minor: PytestRemovedIn10Warning for class-scoped fixtures-as-methods still present; non-blocking."
+  ],
+  "updated_files": ["/app/backend/tests/test_security_hardening.py"],
+  "success_rate": {"backend": "14/14 (100%)", "frontend": "not tested (backend-only retest)"},
+  "test_credentials": "Customer cliente@test.com/Cliente123! and Admin camila@archivelab.design/Archive2026! — both verified working and NOT locked out.",
+  "seed_data_creation": "Tests created ephemeral TEST_guest_*@test.com and TEST Shadow Guest orders via /api/checkout (demo mode, no real charges); not cleaned up. Brute-force used throwaway retest-brute-*@test.com (fresh uuid per run) — no real accounts touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "HIGH-priority brute-force audit item is now resolved and verified end-to-end via the public preview URL. Full suite in /app/backend/tests/test_security_hardening.py passes 14/14. If retesting, use fresh throwaway emails for brute-force (15-min lockout per key)."
+}
