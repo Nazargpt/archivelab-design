@@ -561,11 +561,28 @@ async def register(body: RegisterIn):
     return {"token": token, "user": clean(dict(doc))}
 
 @api.post("/auth/login")
-async def login(body: LoginIn):
+async def login(body: LoginIn, request: Request):
     email = body.email.lower()
+    ip = request.client.host if request.client else "unknown"
+    identifier = f"{ip}:{email}"
+    now = now_utc()
+    rec = await db.login_attempts.find_one({"identifier": identifier})
+    if rec and rec.get("locked_until"):
+        locked_until = datetime.fromisoformat(rec["locked_until"])
+        if locked_until.tzinfo is None:
+            locked_until = locked_until.replace(tzinfo=timezone.utc)
+        if locked_until > now:
+            raise HTTPException(status_code=429, detail="Demasiados intentos fallidos. Probá de nuevo en unos minutos.")
     user = await db.users.find_one({"email": email})
     if not user or not user.get("password_hash") or not verify_password(body.password, user["password_hash"]):
+        count = (rec.get("count", 0) + 1) if rec else 1
+        upd = {"identifier": identifier, "count": count, "updated_at": iso(now)}
+        if count >= 5:
+            upd["locked_until"] = iso(now + timedelta(minutes=15))
+            upd["count"] = 0
+        await db.login_attempts.update_one({"identifier": identifier}, {"$set": upd}, upsert=True)
         raise HTTPException(status_code=401, detail="Email o contraseña incorrectos")
+    await db.login_attempts.delete_one({"identifier": identifier})
     token = create_jwt(user["id"], email)
     return {"token": token, "user": clean(dict(user))}
 
@@ -1044,7 +1061,7 @@ async def send_shipment_email(order: dict):
 
 @api.post("/demo/approve/{order_id}")
 async def demo_approve(order_id: str):
-    if MP_ACCESS_TOKEN:
+    if MP_ACCESS_TOKEN or MP_MODE == "production":
         raise HTTPException(status_code=404, detail="No disponible")
     order = await db.orders.find_one({"id": order_id})
     if not order:
@@ -1073,16 +1090,26 @@ async def mp_webhook(request: Request):
     return {"received": True}
 
 @api.get("/orders/{order_id}")
-async def order_status(order_id: str):
+async def order_status(order_id: str, request: Request):
     o = await db.orders.find_one({"id": order_id}, {"_id": 0})
     if not o:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
-    return o
+    user = await get_optional_user(request)
+    is_owner = bool(user and o.get("user_id") and o.get("user_id") == user["id"])
+    is_admin = bool(user and user.get("role") == "admin")
+    if is_owner or is_admin:
+        return o
+    # Público (p. ej. pantalla de "pago exitoso"): sin datos personales.
+    return {"id": o["id"], "status": o.get("status"), "kind": o.get("kind", "pieces"),
+            "total": o.get("total"), "currency": o.get("currency"),
+            "items": [{"name": i.get("name"), "unit_code": i.get("unit_code"),
+                       "size": i.get("size"), "edition_number": i.get("edition_number")}
+                      for i in o.get("items", [])]}
 
 @api.get("/my/orders")
 async def my_orders(user=Depends(require_user)):
     out = []
-    async for o in db.orders.find({"$or": [{"user_id": user["id"]}, {"guest_email": user["email"]}]}, {"_id": 0}).sort("created_at", -1):
+    async for o in db.orders.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1):
         out.append(o)
     return out
 
@@ -1727,6 +1754,7 @@ async def startup():
     await db.products.create_index("id")
     await db.orders.create_index("id")
     await db.user_sessions.create_index("session_token")
+    await db.login_attempts.create_index("identifier")
     # Seed admin
     admin_email = os.environ["ADMIN_EMAIL"].lower()
     admin_password = os.environ["ADMIN_PASSWORD"]
