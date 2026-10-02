@@ -1,0 +1,47 @@
+{
+  "summary": "Security-hardening verification after audit. Wrote 14 pytest cases covering: valid logins, brute-force lockout (localhost + public-URL RCA), /api/orders/{id} PII redaction for anon/other-user vs full for owner+admin, /api/my/orders user_id scoping (incl. no auto-link by guest email), guest checkout + demo approve flow, CORS allowed/blocked origins. 14/14 pytest tests pass. Frontend: login modal works via /ingresar, /mi-archivo renders only orders of the logged user with no console errors.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/auth/login",
+        "issue": "Brute-force protection uses request.client.host (= k8s ingress proxy IP) instead of parsing X-Forwarded-For / X-Real-IP. Through the public preview URL, k8s ingress distributes connections across at least 2 proxy source IPs (10.79.165.10 and .11 observed), so an attacker effectively gets 2x (or more, scaling with cluster size) attempts per lockout window from a single real client IP. Localhost reproduction confirms lockout works correctly when the server-visible IP is stable (5x 401 -> 429). Public-URL reproduction: 18 wrong logins split evenly, never reaching 5 on either key.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verification_details": {
+    "redaction_anonymous": "GET /api/orders/{id} without auth returns ONLY {id,status,kind,total,currency,items[{name,unit_code,size,edition_number}]} — guest_email/guest_name/shipping_address/payment all absent (verified in test_order_status_redacted_for_anonymous).",
+    "redaction_other_user": "Logged-in customer requesting another user's/guest order gets same redacted shape — no PII leak.",
+    "owner_access": "Owner (user_id match) and admin get the full order with shipping_address, guest_email etc.",
+    "my_orders_scoping": "GET /api/my/orders returns only orders whose user_id == logged user. Verified a guest-checkout with the customer's email does NOT appear in /api/my/orders (no auto-link regression).",
+    "demo_approve": "POST /api/demo/approve/{id} still works in current MP_MODE=test with empty MP_ACCESS_TOKEN; order becomes 'paid' and /api/orders/{id} reflects it.",
+    "login_valid_creds": "cliente@test.com/Cliente123! and camila@archivelab.design/Archive2026! both authenticate (200) and return correct role.",
+    "brute_force_localhost": "6 consecutive wrong attempts via http://localhost:8001 → 401,401,401,401,401,429 (as designed).",
+    "cors": "Preflight via public ingress returns 400 (ingress strips OPTIONS), but normal GET with Origin=REACT_APP_BACKEND_URL returns Access-Control-Allow-Origin matching that origin; GET with Origin=https://evil.example.com does NOT echo that origin → unknown origins blocked. Same-origin app usage not affected."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_security_hardening.py",
+    "/app/test_reports/pytest/iter6_security.xml"
+  ],
+  "action_items": [
+    "SECURITY: In server.py `login()`, derive the client IP from X-Forwarded-For (first entry) or X-Real-IP, falling back to request.client.host. Example: `ip = (request.headers.get('x-forwarded-for','').split(',')[0].strip() or request.headers.get('x-real-ip') or (request.client.host if request.client else 'unknown'))`. Without this, the 5-attempt lockout can be bypassed from the public internet by the ingress load-balancing distribution.",
+    "Optional hardening: also key brute-force protection by email alone (lower threshold) OR by (real-ip) alone, so distributed-across-IPs attacks on one account still trip a limit."
+  ],
+  "critical_code_review_comments": [
+    "server.py:566 — `ip = request.client.host` ignores reverse-proxy headers; impacts brute-force protection effectiveness behind k8s ingress (see action_items).",
+    "server.py:1092 order_status — redaction correctly returns only safe fields for non-owner/non-admin; however the public branch does not include `created_at` or `payment.status`. PaymentResult.jsx polling on `status` works; verify UI doesn't need any of the removed fields.",
+    "server.py:582 — on the 5th wrong attempt the counter is reset to 0 AFTER setting locked_until. If a locked user retries after the 15-minute window expires, the counter starts fresh (desired). OK.",
+    "server.py:1063 demo_approve — correctly 404s when MP_MODE=='production' OR MP_ACCESS_TOKEN set. Current test mode allows it. OK.",
+    "Class-scoped pytest fixtures-as-methods trigger PytestRemovedIn10Warning. Non-blocking, but convert to @classmethod or module-level fixtures when touched next."
+  ],
+  "updated_files": ["/app/backend/tests/test_security_hardening.py"],
+  "success_rate": {"backend": "14/14 pytest (100%); 1 security RCA documented", "frontend": "Login + Mi Archivo sanity 100%"},
+  "test_credentials": "Customer cliente@test.com / Cliente123! and Admin camila@archivelab.design / Archive2026! — both working.",
+  "seed_data_creation": "Tests create ephemeral TEST_guest_* and TEST Shadow Guest orders via POST /api/checkout (demo mode, no real charges). These persist in db.orders; cleanup not performed.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 5 audit items verified except brute-force lockout which is INCOMPLETE under the public URL due to request.client.host usage. If main agent fixes the X-Forwarded-For parsing, re-run `pytest /app/backend/tests/test_security_hardening.py -v -o addopts=''` and specifically check test_brute_force_lockout_public_rca — update it to assert the 6th response is 429. Available product id for guest checkout testing: look for products with `available_by_size[size] > 0`. The login modal is at /ingresar (NOT /login).",
+  "rca of the issue": "ROOT CAUSE: /app/backend/server.py line 566 uses `ip = request.client.host if request.client else 'unknown'`. In the k8s preview environment uvicorn sees the ingress-controller pod's cluster IP (observed: 10.79.165.10 and 10.79.165.11 round-robin), NOT the real end-user IP. The login_attempts collection is keyed by `{ingress_pod_ip}:{email}`, so an attacker from one real IP can split their attempts across multiple ingress pods and never trip the 5-fail threshold. REPRODUCTION: `for i in {1..6}; do curl -X POST https://user-workflow.preview.emergentagent.com/api/auth/login -d '{\"email\":\"x@y.z\",\"password\":\"w\"}' -H 'Content-Type: application/json'; done` — likely stays 401 for all 6. Local reproduction `curl http://localhost:8001/...` with same email returns 429 on 6th. MITIGATION: parse X-Forwarded-For / X-Real-IP in login() (and consider enabling uvicorn's `--proxy-headers` + trusted-hosts) so the counter keys on the real client IP."
+}

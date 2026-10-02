@@ -563,26 +563,33 @@ async def register(body: RegisterIn):
 @api.post("/auth/login")
 async def login(body: LoginIn, request: Request):
     email = body.email.lower()
-    ip = request.client.host if request.client else "unknown"
-    identifier = f"{ip}:{email}"
+    xff = request.headers.get("x-forwarded-for", "")
+    ip = (xff.split(",")[0].strip() if xff else
+          request.headers.get("x-real-ip") or (request.client.host if request.client else "unknown"))
     now = now_utc()
-    rec = await db.login_attempts.find_one({"identifier": identifier})
-    if rec and rec.get("locked_until"):
-        locked_until = datetime.fromisoformat(rec["locked_until"])
-        if locked_until.tzinfo is None:
-            locked_until = locked_until.replace(tzinfo=timezone.utc)
-        if locked_until > now:
-            raise HTTPException(status_code=429, detail="Demasiados intentos fallidos. Probá de nuevo en unos minutos.")
+    # Two limiters: per real-IP+email (5) and per-email across IPs (10, anti credential-stuffing).
+    keys = {f"{ip}:{email}": 5, f"email:{email}": 10}
+    for k in keys:
+        rec = await db.login_attempts.find_one({"identifier": k})
+        if rec and rec.get("locked_until"):
+            lu = datetime.fromisoformat(rec["locked_until"])
+            if lu.tzinfo is None:
+                lu = lu.replace(tzinfo=timezone.utc)
+            if lu > now:
+                raise HTTPException(status_code=429, detail="Demasiados intentos fallidos. Probá de nuevo en unos minutos.")
     user = await db.users.find_one({"email": email})
     if not user or not user.get("password_hash") or not verify_password(body.password, user["password_hash"]):
-        count = (rec.get("count", 0) + 1) if rec else 1
-        upd = {"identifier": identifier, "count": count, "updated_at": iso(now)}
-        if count >= 5:
-            upd["locked_until"] = iso(now + timedelta(minutes=15))
-            upd["count"] = 0
-        await db.login_attempts.update_one({"identifier": identifier}, {"$set": upd}, upsert=True)
+        for k, limit in keys.items():
+            rec = await db.login_attempts.find_one({"identifier": k})
+            count = (rec.get("count", 0) + 1) if rec else 1
+            upd = {"identifier": k, "count": count, "updated_at": iso(now)}
+            if count >= limit:
+                upd["locked_until"] = iso(now + timedelta(minutes=15))
+                upd["count"] = 0
+            await db.login_attempts.update_one({"identifier": k}, {"$set": upd}, upsert=True)
         raise HTTPException(status_code=401, detail="Email o contraseña incorrectos")
-    await db.login_attempts.delete_one({"identifier": identifier})
+    for k in keys:
+        await db.login_attempts.delete_one({"identifier": k})
     token = create_jwt(user["id"], email)
     return {"token": token, "user": clean(dict(user))}
 
