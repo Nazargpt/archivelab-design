@@ -1,0 +1,27 @@
+{
+  "summary": "Frontend-only verification of broken-images bugfix. Tested /archivo, /pieza-expediente/<id>, /, /eventos, /liberaciones on the preview URL. All <img> elements on every tested page have naturalWidth > 0 (ZERO broken images). Image srcs are now served from the current origin (relative paths resolved against REACT_APP_BACKEND_URL), confirming the fix (seed + normalize_asset_urls startup migration + relative upload URL).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verification_details": {
+    "archive_/archivo": "9 product cards visible, 9 images loaded, 0 broken. Sample src: https://user-workflow.preview.emergentagent.com/catalog/dress-vst.jpg (1200x1805).",
+    "expediente_/pieza-expediente/prod_a5c9f18d87cd": "4 images (1 main + 3 gallery thumbnails) all loaded, 0 broken. Thumbnail click swaps main image correctly (verified: dress-vst.jpg -> 1717944105945-669b3dd77bfd.jpg). No <video> on this product (that product has no video); no broken poster.",
+    "home_/": "6 images, 0 broken.",
+    "eventos_/eventos": "4 images, 0 broken. Mix of /catalog/*.jpg and /brand/img2.jpeg all resolve.",
+    "liberaciones_/liberaciones": "3 images, 0 broken. /brand/img3.jpeg and /catalog/*.jpg resolve."
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Archive page shows 9 products but task mentions 11 — not related to image bug; likely some are filtered by availability tab (Disponible vs Histórico). Flag only if product count matters."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Image URL bug is FIXED. All stored assets are served as relative paths and resolve under REACT_APP_BACKEND_URL origin. Expediente route is /pieza-expediente/<product_id>. Gallery has 3 thumbnails per piece; clicking a thumbnail swaps main image via <img src={p.images[active]}>. If future regressions, re-run the naturalWidth===0 DOM check across /archivo, a product detail, /eventos, /liberaciones."
+}
