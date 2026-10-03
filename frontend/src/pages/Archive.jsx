@@ -23,7 +23,7 @@ export default function Archive() {
   const historic = view === "historico";
 
   useEffect(() => {
-    setSeo({ title: "Archivo", description: "Explorá el archivo disponible: denim intervenido, íntima, accesorios y carteras. Ediciones limitadas de moda de autor.", path: "/archivo" });
+    setSeo({ title: "Catálogo", description: "Explorá el catálogo disponible: denim intervenido, íntima, accesorios y carteras. Ediciones limitadas de moda de autor.", path: "/archivo" });
   }, []);
 
   useEffect(() => {
@@ -51,8 +51,8 @@ export default function Archive() {
   return (
     <div className="px-4 sm:px-8 lg:px-16 py-12 lg:py-16">
       <div className="mb-8">
-        <div className="dossier-label text-[#6E675E] mb-3">{historic ? "Ediciones agotadas" : "El archivo disponible"}</div>
-        <h1 className="font-display font-extrabold uppercase tracking-tight text-4xl lg:text-6xl text-[#F5F4F0]">Archivo</h1>
+        <div className="dossier-label text-[#6E675E] mb-3">{historic ? "Ediciones agotadas" : "El catálogo disponible"}</div>
+        <h1 className="font-display font-extrabold uppercase tracking-tight text-4xl lg:text-6xl text-[#F5F4F0]">{historic ? "Archivo" : "Catálogo"}</h1>
       </div>
 
       <div className="flex gap-2 mb-6">

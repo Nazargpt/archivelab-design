@@ -1752,6 +1752,38 @@ async def normalize_asset_urls():
         logger.info(f"Normalized asset URLs on {changed} documents")
 
 
+CATALOG_IMAGES_VERSION = 2
+CANONICAL_IMAGES = {
+    "DNM01": ["/catalog/gen_dnm01.jpg", "/catalog/1697924293303-34488b60bf36.jpg", "/catalog/1741941171881-40832346c7fe.jpg"],
+    "DNM02": ["/catalog/gen_dnm02.jpg", "/catalog/1640336437338-5c36f7e1115f.jpg", "/catalog/1616411598297-e0053c6ee59d.jpg"],
+    "DNM03": ["/catalog/gen_dnm03.jpg", "/catalog/1699379012687-7da0cd15f3cb.jpg", "/catalog/denim03.jpg"],
+    "INT01": ["/catalog/gen_int01.jpg", "/catalog/1652397902034-9f9483171e74.jpg", "/catalog/1579071072964-395e8239d579.jpg"],
+    "INT02": ["/catalog/gen_int02.jpg", "/catalog/1618902751861-3de78572c067.jpg", "/catalog/1716652841447-df18e7a026a8.jpg"],
+    "ACC01": ["/catalog/gen_acc01.jpg", "/catalog/1617183088274-e1e9e201ebbb.jpg", "/catalog/gloves2.jpg"],
+    "CAR01": ["/catalog/gen_car01.jpg", "/catalog/1614179689702-355944cd0918.jpg", "/catalog/1589363358751-ab05797e5629.jpg"],
+    "CAR02": ["/catalog/gen_car02.jpg", "/catalog/clutch1.jpg", "/catalog/clutch2.jpg"],
+    "CG01": ["/catalog/gen_cg01.jpg", "/catalog/1645951251394-5f841f31e9ee.jpg", "/catalog/1635279474047-ab3cda78bbe8.jpg"],
+    "CG02": ["/catalog/gen_cg02.jpg", "/catalog/corset-cg.jpg", "/brand/img1.jpeg"],
+    "VST01": ["/catalog/gen_vst01.jpg", "/catalog/dress-vst.jpg", "/catalog/1717944105945-669b3dd77bfd.jpg"],
+}
+
+
+async def sync_catalog_images():
+    """Aplica (una vez por versión) el set canónico de imágenes por design_code.
+    Garantiza que prod/preview muestren las imágenes exclusivas aunque la DB ya estuviera seedeada.
+    Versionado para no pisar futuras ediciones del panel."""
+    rec = await db.settings.find_one({"id": "catalog_sync"}, {"_id": 0})
+    if rec and int(rec.get("version", 0)) >= CATALOG_IMAGES_VERSION:
+        return
+    n = 0
+    for dc, imgs in CANONICAL_IMAGES.items():
+        r = await db.products.update_one({"design_code": dc}, {"$set": {"images": imgs}})
+        n += r.modified_count
+    await db.settings.update_one({"id": "catalog_sync"},
+        {"$set": {"id": "catalog_sync", "version": CATALOG_IMAGES_VERSION}}, upsert=True)
+    logger.info(f"Catalog images synced to v{CATALOG_IMAGES_VERSION} ({n} products)")
+
+
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("email", unique=True)
@@ -1778,6 +1810,7 @@ async def startup():
     await seed_content()
     await seed_releases()
     await normalize_asset_urls()
+    await sync_catalog_images()
     try:
         init_storage()
         logger.info("Storage initialized")

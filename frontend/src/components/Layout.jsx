@@ -7,7 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { CATEGORIES } from "@/lib/api";
 
 const NAV = [
-  { to: "/archivo", label: "Archivo" },
+  { to: "/archivo", label: "Catálogo" },
   { to: "/liberaciones", label: "Liberaciones" },
   { to: "/eventos", label: "Eventos" },
   { to: "/camila-guerra", label: "Camila Guerra" },
